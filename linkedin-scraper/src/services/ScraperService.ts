@@ -70,14 +70,22 @@ export class ScraperService {
       // Navigate to search page
       await this.browser.navigate(searchUrl);
 
-      // Wait for results to load
-      await this.randomDelay(2000, 4000);
+      // Wait for results to load - LinkedIn needs time to render
+      logger.info('Waiting for LinkedIn to load results...');
+      await this.randomDelay(3000, 5000);
 
       // Get parser instance
       const parser = new Parser(this.browser.getPage());
 
       // Extract total count
+      logger.info('Extracting total job count...');
       const totalJobs = await parser.extractTotalCount();
+
+      if (totalJobs === 0) {
+        logger.warn('No jobs found. This might indicate LinkedIn blocking or invalid search.');
+        await this.saveDebugArtifacts('no-jobs-found', { searchUrl });
+      }
+
       await this.searchRepo.update(searchId, { total_results: totalJobs });
 
       const limit = Math.min(options.limit, totalJobs);
@@ -116,6 +124,18 @@ export class ScraperService {
               logger.error('Failed to scrape job', { card, error });
               this.progressUI.incrementFailed();
               await this.searchRepo.incrementFailed(searchId!);
+
+              // Save debug artifacts for first few failures
+              const failedCount = await this.searchRepo.findById(searchId!).then(s => s?.failed_scrapes || 0);
+              if (failedCount < 3) {
+                await this.saveDebugArtifacts('job-scrape-failed', {
+                  jobId: card.id,
+                  title: card.title,
+                  company: card.company,
+                  error: error instanceof Error ? error.message : String(error)
+                });
+              }
+
               await this.searchRepo.logError({
                 search_id: searchId!,
                 job_id: card.id,
@@ -253,5 +273,37 @@ export class ScraperService {
   private async randomDelay(min: number, max: number): Promise<void> {
     const delay = Math.random() * (max - min) + min;
     await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  /**
+   * Save debug artifacts (screenshot + HTML) for troubleshooting
+   */
+  private async saveDebugArtifacts(prefix: string, context?: Record<string, any>): Promise<void> {
+    const timestamp = Date.now();
+    const page = this.browser.getPage();
+
+    // Save screenshot
+    try {
+      const screenshotPath = `./logs/${prefix}-screenshot-${timestamp}.png`;
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      logger.info('Debug screenshot saved', { path: screenshotPath, context });
+    } catch (screenshotError) {
+      logger.debug('Could not save screenshot', { error: screenshotError });
+    }
+
+    // Save HTML from browser's internal state (no re-download)
+    try {
+      const htmlContent = await page.content();
+      const htmlPath = `./logs/${prefix}-page-${timestamp}.html`;
+      const fs = await import('fs');
+      fs.writeFileSync(htmlPath, htmlContent, 'utf-8');
+      logger.info('Debug HTML saved', {
+        path: htmlPath,
+        size: htmlContent.length,
+        context
+      });
+    } catch (htmlError) {
+      logger.debug('Could not save HTML', { error: htmlError });
+    }
   }
 }

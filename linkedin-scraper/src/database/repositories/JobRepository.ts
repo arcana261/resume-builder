@@ -2,9 +2,15 @@ import { eq, desc, and, gte, like } from 'drizzle-orm';
 import { getDatabase } from '../db.js';
 import { jobs } from '../schema.js';
 import type { Job } from '../../types/index.js';
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import type * as schema from '../schema.js';
 
 export class JobRepository {
-  private db = getDatabase();
+  private db: BetterSQLite3Database<typeof schema>;
+
+  constructor(db?: BetterSQLite3Database<typeof schema>) {
+    this.db = (db || getDatabase()) as BetterSQLite3Database<typeof schema>;
+  }
 
   async create(job: Omit<Job, 'id' | 'created_at' | 'updated_at'>): Promise<Job> {
     const result = this.db.insert(jobs).values({
@@ -36,7 +42,13 @@ export class JobRepository {
     return results.map(r => this.mapToJob(r));
   }
 
+  async findById(id: number): Promise<Job | null> {
+    const result = this.db.select().from(jobs).where(eq(jobs.id, id)).get();
+    return result ? this.mapToJob(result) : null;
+  }
+
   async findAll(filters?: {
+    searchId?: number;
     company?: string;
     location?: string;
     dateFrom?: Date;
@@ -45,6 +57,9 @@ export class JobRepository {
     let query = this.db.select().from(jobs);
 
     const conditions = [];
+    if (filters?.searchId) {
+      conditions.push(eq(jobs.search_id, filters.searchId));
+    }
     if (filters?.company) {
       conditions.push(like(jobs.company, `%${filters.company}%`));
     }
@@ -69,12 +84,30 @@ export class JobRepository {
     return results.map(r => this.mapToJob(r));
   }
 
-  async count(searchId?: number): Promise<number> {
-    if (searchId) {
+  async update(id: number, updates: Partial<Omit<Job, 'id' | 'created_at'>>): Promise<Job | null> {
+    const result = this.db
+      .update(jobs)
+      .set({
+        ...updates,
+        updated_at: new Date()
+      })
+      .where(eq(jobs.id, id))
+      .returning()
+      .get();
+
+    return result ? this.mapToJob(result) : null;
+  }
+
+  async delete(id: number): Promise<void> {
+    this.db.delete(jobs).where(eq(jobs.id, id)).run();
+  }
+
+  async count(filters?: { searchId?: number }): Promise<number> {
+    if (filters?.searchId) {
       const result = this.db
         .select()
         .from(jobs)
-        .where(eq(jobs.search_id, searchId))
+        .where(eq(jobs.search_id, filters.searchId))
         .all();
       return result.length;
     }

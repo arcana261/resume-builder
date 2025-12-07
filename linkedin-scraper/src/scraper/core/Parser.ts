@@ -15,23 +15,30 @@ export class Parser {
       // Wait for job listings to load
       await this.page.waitForSelector('.jobs-search__results-list', { timeout: 10000 });
 
-      // Get all job card elements
-      const cardElements = await this.page.$$('.jobs-search__results-list > li');
+      // Get all job card elements (using the actual LinkedIn structure)
+      const cardElements = await this.page.$$('div.base-card[data-entity-urn]');
 
       for (let i = 0; i < cardElements.length; i++) {
         try {
           const element = cardElements[i];
 
-          const jobId = await element.getAttribute('data-occludable-job-id');
-          if (!jobId) continue;
+          // Extract job ID from data-entity-urn attribute
+          // Format: "urn:li:jobPosting:4337634700"
+          const entityUrn = await element.getAttribute('data-entity-urn');
+          if (!entityUrn) continue;
 
-          const title = await element.$eval('.job-card-list__title', el => el.textContent?.trim() || '');
-          const company = await element.$eval('.job-card-container__company-name', el => el.textContent?.trim() || '');
-          const location = await element.$eval('.job-card-container__metadata-item', el => el.textContent?.trim() || '');
+          const jobIdMatch = entityUrn.match(/urn:li:jobPosting:(\d+)/);
+          if (!jobIdMatch) continue;
+
+          const jobId = jobIdMatch[1];
+
+          const title = await element.$eval('h3.base-search-card__title', el => el.textContent?.trim() || '').catch(() => '');
+          const company = await element.$eval('h4.base-search-card__subtitle a', el => el.textContent?.trim() || '').catch(() => '');
+          const location = await element.$eval('span.job-search-card__location', el => el.textContent?.trim() || '').catch(() => '');
 
           cards.push({
             id: jobId,
-            selector: `li[data-occludable-job-id="${jobId}"]`,
+            selector: `div.base-card[data-entity-urn="${entityUrn}"]`,
             title,
             company,
             location
@@ -155,20 +162,79 @@ export class Parser {
    */
   async extractTotalCount(): Promise<number> {
     try {
-      const countText = await this.page.textContent('.jobs-search-results-list__subtitle');
+      // Try multiple selectors as LinkedIn's structure may vary
+      // Starting with the actual selector found in LinkedIn's current structure
+      const selectors = [
+        '.results-context-header__job-count',
+        '.jobs-search-results-list__subtitle',
+        '.jobs-search-results__subtitle',
+        'small.jobs-search-results-list__text',
+        '[class*="jobs-search-results"]  [class*="subtitle"]',
+        '[class*="jobs-search"] small'
+      ];
+
+      let countText: string | null = null;
+
+      for (const selector of selectors) {
+        try {
+          // Wait for the selector with a timeout
+          await this.page.waitForSelector(selector, { timeout: 10000, state: 'visible' });
+          countText = await this.page.textContent(selector);
+
+          if (countText && countText.trim()) {
+            logger.info('Found count text with selector', { selector, text: countText });
+            break;
+          }
+        } catch (selectorError) {
+          // Try next selector
+          logger.debug('Selector not found', { selector });
+          continue;
+        }
+      }
 
       if (!countText) {
+        // Try to get any text that might contain results count
+        logger.warn('Could not find job count with known selectors, trying fallback');
+
+        const bodyText = await this.page.evaluate(() => {
+          const elements = document.querySelectorAll('small, .subtitle, [class*="subtitle"]');
+          for (const el of Array.from(elements)) {
+            const text = el.textContent || '';
+            if (/\d+[\d,]*\s*results?/i.test(text)) {
+              return text;
+            }
+          }
+          return null;
+        });
+
+        countText = bodyText;
+      }
+
+      if (!countText) {
+        logger.warn('No job count found on page');
         return 0;
       }
 
-      const match = countText.match(/(\d+[\d,]*)\s*results?/i);
+      // Try to match "123 results" or "123,456 results" format
+      let match = countText.match(/(\d+[\d,]*)\s*results?/i);
       if (match) {
-        return parseInt(match[1].replace(/,/g, ''));
+        const count = parseInt(match[1].replace(/,/g, ''));
+        logger.info('Extracted job count', { count, rawText: countText });
+        return count;
       }
 
+      // If no "results" keyword, try to extract just the number
+      match = countText.match(/(\d+[\d,]*)/);
+      if (match) {
+        const count = parseInt(match[1].replace(/,/g, ''));
+        logger.info('Extracted job count (number only)', { count, rawText: countText });
+        return count;
+      }
+
+      logger.warn('Could not parse job count from text', { text: countText });
       return 0;
     } catch (error) {
-      logger.warn('Failed to extract total count', { error });
+      logger.error('Failed to extract total count', { error });
       return 0;
     }
   }

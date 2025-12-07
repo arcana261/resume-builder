@@ -2,9 +2,15 @@ import { eq, desc } from 'drizzle-orm';
 import { getDatabase } from '../db.js';
 import { searches, scrape_errors } from '../schema.js';
 import type { Search, ScrapeError } from '../../types/index.js';
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import type * as schema from '../schema.js';
 
 export class SearchRepository {
-  private db = getDatabase();
+  private db: BetterSQLite3Database<typeof schema>;
+
+  constructor(db?: BetterSQLite3Database<typeof schema>) {
+    this.db = (db || getDatabase()) as BetterSQLite3Database<typeof schema>;
+  }
 
   async create(search: Omit<Search, 'id' | 'created_at'>): Promise<Search> {
     const result = this.db.insert(searches).values({
@@ -32,7 +38,7 @@ export class SearchRepository {
     return results.map(r => this.mapToSearch(r));
   }
 
-  async update(id: number, updates: Partial<Omit<Search, 'id' | 'created_at'>>): Promise<void> {
+  async update(id: number, updates: Partial<Omit<Search, 'id' | 'created_at'>>): Promise<Search | null> {
     const updateData: any = { ...updates };
 
     if (updates.started_at) {
@@ -42,7 +48,14 @@ export class SearchRepository {
       updateData.completed_at = updates.completed_at;
     }
 
-    this.db.update(searches).set(updateData).where(eq(searches.id, id)).run();
+    const result = this.db
+      .update(searches)
+      .set(updateData)
+      .where(eq(searches.id, id))
+      .returning()
+      .get();
+
+    return result ? this.mapToSearch(result) : null;
   }
 
   async incrementSuccessful(id: number): Promise<void> {
@@ -65,7 +78,10 @@ export class SearchRepository {
 
   async logError(error: Omit<ScrapeError, 'id'>): Promise<void> {
     this.db.insert(scrape_errors).values({
-      ...error,
+      search_id: error.search_id,
+      job_id: error.job_id || null,
+      error_type: error.error_type,
+      error_message: error.error_message,
       occurred_at: error.occurred_at
     }).run();
   }
@@ -78,9 +94,11 @@ export class SearchRepository {
       .all();
 
     return results.map(r => ({
-      ...r,
+      id: r.id,
+      search_id: r.search_id,
       job_id: r.job_id || undefined,
-      url: r.url || undefined,
+      error_type: r.error_type,
+      error_message: r.error_message,
       occurred_at: new Date(r.occurred_at)
     }));
   }

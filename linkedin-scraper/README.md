@@ -44,7 +44,27 @@ npm run build
 npm run dev
 ```
 
-### Option 2: Install Globally
+### Option 2: Use Shell Script Wrapper
+
+```bash
+# Make the wrapper executable (already done)
+chmod +x linkedin-scraper.sh
+
+# Run directly - it will auto-build if needed
+./linkedin-scraper.sh --help
+./linkedin-scraper.sh scrape --interactive
+```
+
+The shell script wrapper (`linkedin-scraper.sh`) automatically:
+- Checks Node.js version
+- Installs dependencies if missing
+- Builds TypeScript code if needed
+- Passes all arguments to the compiled application
+
+**Special flags:**
+- `--rebuild` - Force rebuild even if build exists
+
+### Option 3: Install Globally
 
 ```bash
 # Build and link
@@ -60,7 +80,11 @@ linkedin-scraper --help
 ### Interactive Mode (Recommended for First-Time Users)
 
 ```bash
-linkedin-scraper scrape --interactive
+# Using npm
+npm run dev scrape --interactive
+
+# Using shell wrapper
+./linkedin-scraper.sh scrape --interactive
 ```
 
 This will guide you through all available options with prompts.
@@ -68,14 +92,20 @@ This will guide you through all available options with prompts.
 ### Command-Line Mode
 
 ```bash
-# Basic scrape
-linkedin-scraper scrape \
+# Using npm
+npm run dev scrape \
+  --position "Software Engineer" \
+  --location "San Francisco, CA" \
+  --limit 50
+
+# Using shell wrapper
+./linkedin-scraper.sh scrape \
   --position "Software Engineer" \
   --location "San Francisco, CA" \
   --limit 50
 
 # Advanced scrape with filters
-linkedin-scraper scrape \
+./linkedin-scraper.sh scrape \
   --position "Data Scientist" \
   --location "Remote" \
   --experience-level "Mid-Senior" "Director" \
@@ -309,6 +339,24 @@ npm run clean
 npm run build
 ```
 
+### Testing
+
+The project includes comprehensive unit tests covering all parsing and database functionality:
+
+```bash
+npm test              # Run all tests (119 tests)
+npm run test:watch    # Watch mode for development
+npm run test:ui       # Interactive test UI
+npm run test:coverage # Generate coverage report
+```
+
+**Test Coverage:**
+- **Parser Tests (26)**: Job extraction, count parsing, pagination
+- **Repository Tests (58)**: CRUD operations, filtering, search lifecycle
+- **Filter Tests (35)**: URL building, parameter mapping
+
+All tests use real LinkedIn HTML fixtures and in-memory SQLite for fast execution.
+
 ## Database Schema
 
 The application uses SQLite with three main tables:
@@ -355,8 +403,12 @@ If job extraction fails:
 
 1. LinkedIn may have changed their HTML structure
 2. Check logs in `./logs/scraper.log` for details
-3. Try updating dependencies: `npm update`
-4. Report the issue with log details
+3. Check `./logs/` for auto-saved debug artifacts (screenshots + HTML)
+4. Analyze the saved HTML to identify new selectors
+5. Update selectors in `src/scraper/core/Parser.ts`
+6. Run tests: `npm test` to verify fixes
+7. Try updating dependencies: `npm update`
+8. Report the issue with log details
 
 ### Database Errors
 

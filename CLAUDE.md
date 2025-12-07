@@ -240,9 +240,73 @@ All scraping errors are logged to:
 
 Use retry logic with exponential backoff (implemented via `p-retry` with 3 retries).
 
-## Testing Approach
+## Testing Framework
 
-When testing the scraper:
+### Unit Testing with Vitest
+
+The project includes comprehensive fixture-based unit tests covering all parsing and database functionality.
+
+**Test Structure:**
+```
+tests/
+├── unit/                      # Unit tests
+│   ├── Parser.test.ts         # 26 tests - All extraction methods
+│   ├── JobRepository.test.ts  # 32 tests - CRUD & filtering
+│   ├── SearchRepository.test.ts # 26 tests - Search lifecycle
+│   └── JobFilter.test.ts      # 35 tests - URL building
+├── fixtures/                  # Test data
+│   └── linkedin-search-91-jobs.html  # Real LinkedIn HTML
+├── mocks/                     # Mock implementations
+│   └── MockPage.ts            # Mock Playwright Page with JSDOM
+└── helpers/                   # Test utilities
+    ├── fixture-loader.ts      # Load HTML fixtures
+    └── test-database.ts       # In-memory SQLite
+
+Total: 119 tests, 100% passing
+```
+
+**Test Commands:**
+```bash
+npm test              # Run all tests
+npm run test:watch    # Watch mode
+npm run test:ui       # Interactive UI
+npm run test:coverage # With coverage report
+```
+
+**Key Testing Features:**
+- **Fixture-based**: Uses real LinkedIn HTML (debug.html) as test input
+- **In-memory database**: SQLite in-memory for fast repository tests
+- **Mock Playwright Page**: JSDOM-based mock for Parser tests without browser
+- **White-box testing**: Tests internal implementation details
+- **Dependency injection**: Repositories accept optional database parameter
+
+**Parser Tests (26):**
+- Extract job count from various selector patterns
+- Extract job cards with all metadata (ID, title, company, location)
+- Handle pagination (hasNextPage, clickNextPage)
+- JSON-LD and HTML extraction strategies
+- Edge cases (empty listings, invalid data)
+- Data validation (numeric IDs, trimmed text)
+
+**Repository Tests (58):**
+- JobRepository (32): CRUD operations, filtering, searching, data integrity
+- SearchRepository (26): Search lifecycle, error logging, counter increments
+
+**JobFilter Tests (35):**
+- URL building with all filter combinations
+- Experience level/employment type mappings
+- Date posted and remote option filters
+- URL encoding and parameter ordering
+
+**Architectural Changes for Testability:**
+1. Repositories now accept optional database in constructor (dependency injection)
+2. Added missing CRUD methods: `findById()`, `update()`, `delete()`
+3. Parser uses updated LinkedIn selectors based on real HTML analysis
+4. Enhanced error handling with debug artifact saving
+
+### Integration Testing
+
+When testing the full scraper:
 
 1. **Start small**: Use `--limit 10` for initial tests
 2. **Monitor logs**: Check `logs/scraper.log` for errors
@@ -250,6 +314,7 @@ When testing the scraper:
 4. **Check database**: SQLite file at `data/linkedin-jobs.db`
 5. **Watch for blocks**: If scraping stops early, you may be rate-limited
 6. **Test incrementally**: Add features one at a time and test thoroughly
+7. **Debug artifacts**: Check `logs/` for auto-saved screenshots and HTML on failures
 
 ## Common Issues
 
@@ -268,6 +333,8 @@ When testing the scraper:
 - Check logs for specific selectors that failed
 - Parser has fallback strategies (JSON-LD → HTML)
 - May need to update selectors in Parser.ts
+- Debug artifacts: Auto-saved to `logs/` (screenshot + HTML) on first 3 failures per search
+- Analyze saved HTML to find new selector patterns
 
 ### TypeScript errors
 - Ensure DOM types in lib: `"lib": ["ES2022", "DOM"]`
