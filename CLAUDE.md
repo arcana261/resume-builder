@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains tools for building and managing resumes, including a LinkedIn job scraper to gather job postings data for resume optimization and job search.
+This repository contains a complete job search management system consisting of two main applications:
+
+1. **linkedin-scraper**: CLI tool to scrape job postings from LinkedIn
+2. **job-browser**: Web application to browse and filter scraped jobs
 
 ### Original Requirements
 
@@ -15,6 +18,8 @@ The LinkedIn scraper was built to fulfill these requirements:
 4. Store job search history in the database
 5. Capture job posting timestamps
 6. Display progress bars and terminal-based UI during scraping
+
+The job browser extends this with a web UI for exploring scraped data.
 
 ## Repository Structure
 
@@ -32,6 +37,7 @@ A TypeScript CLI application for scraping LinkedIn job postings with advanced fi
 - Chalk, Ora, CLI-Progress (terminal UI)
 - Winston (structured logging)
 - P-Queue & P-Retry (concurrency & error handling)
+- Vitest + JSDOM (testing framework)
 
 **Project Structure:**
 ```
@@ -44,8 +50,7 @@ linkedin-scraper/
 │   │   └── index.ts          # CLI entry point
 │   ├── scraper/
 │   │   ├── core/             # Browser, Parser
-│   │   ├── filters/          # JobFilter (URL building)
-│   │   └── anti-detection/   # (placeholder for future)
+│   │   └── filters/          # JobFilter (URL building)
 │   ├── database/
 │   │   ├── schema.ts         # Drizzle schema definitions
 │   │   ├── repositories/     # JobRepository, SearchRepository
@@ -53,10 +58,60 @@ linkedin-scraper/
 │   ├── services/             # ScraperService orchestration
 │   ├── utils/                # Logger, validators, date helpers
 │   └── types/                # TypeScript type definitions
+├── tests/                    # 119 unit tests with 100% pass rate
+│   ├── unit/                 # Parser, Repository, Filter tests
+│   ├── fixtures/             # Real LinkedIn HTML samples
+│   ├── mocks/                # MockPage with JSDOM
+│   └── helpers/              # Test utilities
 ├── data/                     # SQLite database (gitignored)
 ├── logs/                     # Application logs (gitignored)
-├── dist/                     # Compiled JS (gitignored)
-└── node_modules/             # Dependencies (gitignored)
+└── dist/                     # Compiled JS (gitignored)
+```
+
+### job-browser/
+
+A full-stack web application for browsing and filtering scraped LinkedIn job postings.
+
+**Technology Stack:**
+
+Frontend:
+- React 18 + TypeScript
+- Vite (build tool)
+- TanStack React Query (data fetching)
+- Zustand (state management)
+- React Router (routing)
+- Tailwind CSS (styling)
+- DOMPurify (XSS protection)
+- date-fns (date formatting)
+
+Backend:
+- Express + TypeScript
+- better-sqlite3 (SQLite database)
+- CORS middleware
+
+**Project Structure:**
+```
+job-browser/
+├── client/                   # React frontend
+│   ├── src/
+│   │   ├── components/       # FilterPanel, JobCard, JobList, SafeHTML
+│   │   ├── pages/            # JobBrowser, JobDetailPage
+│   │   ├── hooks/            # useJobs (React Query)
+│   │   ├── store/            # filterStore (Zustand)
+│   │   ├── lib/              # api, utils
+│   │   └── styles/           # Tailwind + custom CSS
+│   ├── index.html
+│   ├── vite.config.ts
+│   └── tailwind.config.js
+├── server/                   # Express backend
+│   ├── src/
+│   │   ├── routes/           # jobs, searches
+│   │   ├── services/         # JobService, DatabaseService
+│   │   └── middleware/       # cors, errorHandler
+│   └── .env.example
+├── shared/                   # Shared TypeScript types
+│   └── types.ts
+└── package.json              # Workspace scripts
 ```
 
 ## Development Commands
@@ -77,6 +132,10 @@ npm run dev                    # Run with auto-reload
 npm run build                  # Build project
 npm run watch                  # Watch mode
 npm run clean                  # Clean build artifacts
+npm test                       # Run 119 unit tests
+npm run test:watch             # Test watch mode
+npm run test:ui                # Interactive test UI
+npm run test:coverage          # With coverage report
 ```
 
 **Usage:**
@@ -86,6 +145,9 @@ npm run dev scrape --interactive
 
 # CLI mode
 npm run dev scrape --position "Software Engineer" --location "SF" --limit 50
+
+# Refresh existing jobs
+npm run dev scrape --position "Software Engineer" --refresh
 
 # List scraped jobs
 npm run dev list --limit 20
@@ -97,13 +159,41 @@ npm run dev export --format json --output jobs.json
 npm run dev clear
 ```
 
+### job-browser
+
+**Setup:**
+```bash
+cd job-browser
+npm install              # Install all dependencies (client + server)
+```
+
+**Development:**
+```bash
+npm run dev              # Start both client and server
+npm run dev:client       # Start client only (port 5173)
+npm run dev:server       # Start server only (port 3000)
+npm run build            # Build both client and server
+npm run build:client     # Build client only
+npm run build:server     # Build server only
+```
+
+**Production:**
+```bash
+npm run start            # Start production server (serves built client)
+```
+
+**Configuration:**
+- Client runs on http://localhost:5173
+- Server runs on http://localhost:3000
+- Database path configured in server/.env (defaults to ../linkedin-scraper/data/linkedin-jobs.db)
+
 ## Node.js Version Management
 
 This project uses **fnm** (Fast Node Manager) for Node.js version management:
 
 - Required: Node.js >= 18.0.0
 - Current: v24.11.1 (pinned via `.node-version`)
-- fnm auto-switches to correct version when entering `linkedin-scraper/` directory
+- fnm auto-switches to correct version when entering directories
 
 **fnm is configured in ~/.bashrc:**
 ```bash
@@ -114,14 +204,17 @@ eval "$(fnm env --use-on-cd)"
 
 ### Database Schema (SQLite)
 
+Both applications share the same SQLite database.
+
 **jobs table:**
 - Primary fields: job_id (unique), title, company, location, description
 - Employment details: employment_type, seniority_level, industry
 - Salary: salary_min, salary_max, salary_currency
 - Metadata: job_url, apply_url, posted_at, scraped_at, search_id
+- Storage: raw_data (JSON), page_html (full LinkedIn HTML)
 - Audit: created_at, updated_at
-- Storage: raw_data (JSON string of full scraped data)
 - Indexes: job_id, company, location, posted_at, search_id
+- Full-text search: jobs_fts virtual table (FTS5)
 
 **searches table:**
 - Tracks each scrape session with query, location, filters (JSON)
@@ -132,9 +225,8 @@ eval "$(fnm env --use-on-cd)"
 **scrape_errors table:**
 - Logs all scraping failures for debugging
 - Fields: search_id, job_id, error_type, error_message, url, occurred_at
-- Linked to searches table via foreign key
 
-### Code Patterns
+### LinkedIn Scraper Architecture
 
 #### Scraping Flow
 1. User provides filters (position, location, experience, etc.)
@@ -150,7 +242,7 @@ eval "$(fnm env --use-on-cd)"
 The parser tries multiple extraction methods in order:
 1. **JSON-LD extraction** - Parse `<script type="application/ld+json">` tags (fastest, most reliable)
 2. **HTML extraction** - Query DOM selectors for job details (fallback)
-3. **API interception** - Monitor XHR calls to LinkedIn's internal APIs (advanced, not implemented)
+3. **Job ID fallback** - Use card.id when JSON-LD missing identifier
 
 This ensures resilience against HTML structure changes.
 
@@ -163,25 +255,98 @@ Job filters are mapped to LinkedIn URL parameters:
 
 #### Anti-Detection Measures
 - User-agent rotation (5 different user agents)
-- Random delays (3-7 seconds between requests, 2-4 seconds between job clicks)
+- Random delays (3-7 seconds between requests, 1.5-3 seconds between job clicks)
 - Browser fingerprinting prevention (hides WebDriver, adds Chrome object)
 - Request throttling (max 2 concurrent, 5 second intervals)
 - Stealth mode via Playwright context modifications
+- Modal overlay removal (automatic detection and cleanup)
+- Browser navigation (goBack after each job to maintain context)
 - Headless mode by default (configurable via .env)
 
-#### Error Handling
-All errors are handled with retry logic:
-- Network errors: Retry 3 times with exponential backoff
+#### Error Handling & Debugging
+All errors are handled with comprehensive retry logic:
+- Network errors: Retry 3 times with exponential backoff via p-retry
 - Parsing errors: Try alternative strategies, log and continue
-- Rate limiting: Should pause (not implemented - scraper stops)
+- Modal overlays: Auto-remove with loop (up to 10 attempts)
 - Database errors: Log to scrape_errors table
+- Debug artifacts: Auto-save screenshot + HTML on failures to logs/
+  - First 3 failures per search
+  - Each retry attempt
+  - Complete retry exhaustion
 - All errors logged to Winston (logs/scraper.log)
+- Browser console forwarding to Node.js logs (opt-in via --log-browser-errors)
+
+#### Refresh Mode (--refresh flag)
+- By default, existing jobs are skipped during scraping
+- `--refresh` flag forces update of existing job records
+- Updates: description, salary, location, employment_type, seniority_level, etc.
+- Updates scraped_at and updated_at timestamps
+- Useful for tracking changes to job postings over time
 
 #### Concurrency Control
 - Uses `p-queue` for job scraping queue
 - Max 2 concurrent browser operations
 - Rate limiting: 1 batch per 5 seconds
 - Ensures LinkedIn isn't overwhelmed with requests
+
+### Job Browser Architecture
+
+#### Frontend Architecture
+
+**State Management:**
+- Filter state managed by Zustand store (`filterStore.ts`)
+- Persisted to localStorage for session continuity
+- Tracks: search, companies, locations, employmentTypes, seniorityLevels, industries, salary range, date filters, sort options, pagination
+
+**Data Fetching:**
+- TanStack React Query for server state management
+- Automatic caching and background refetching
+- `useJobs` hook for job listings
+- `useJob` hook for job details
+- `useJobHTML` hook for original LinkedIn HTML
+
+**Routing:**
+- `/` - Main job browser with filters
+- `/jobs/:id` - Job detail page with tabs (details, HTML, raw JSON)
+
+**Components:**
+- `FilterPanel` - Multi-criteria filtering UI with counts
+- `JobList` - Paginated job cards with loading states
+- `JobCard` - Job preview with metadata, description snippet, LinkedIn link
+- `SafeHTML` - XSS-safe HTML rendering with DOMPurify
+- `JobDetailPage` - Full job details with 3 tabs
+
+**Safe HTML Rendering:**
+- DOMPurify sanitizes all HTML content before rendering
+- HTML entity decoding for double-encoded content
+- Whitelist approach (only safe tags allowed)
+- Tailwind prose classes for beautiful typography
+- Custom CSS for enhanced formatting
+- Dark mode support
+
+#### Backend Architecture
+
+**API Endpoints:**
+```
+GET  /api/jobs              # List jobs with filtering, pagination, sorting
+GET  /api/jobs/:id          # Get single job by ID
+GET  /api/jobs/:id/html     # Get original LinkedIn HTML
+GET  /api/searches          # List all searches
+GET  /api/searches/:id      # Get single search with jobs
+```
+
+**JobService:**
+- Handles all business logic for job retrieval
+- Full-text search using SQLite FTS5
+- Complex filtering (company, location, type, seniority, industry, salary, dates)
+- Pagination with limit/offset
+- Sorting by multiple fields
+- Filter options with counts for UI
+
+**DatabaseService:**
+- Singleton pattern for database connection
+- Shared database with linkedin-scraper
+- SQLite with WAL mode for concurrency
 
 ### Data Flow Diagram
 
@@ -205,8 +370,10 @@ User Input → Validate → Create Search Record → Launch Browser
     Try JSON-LD ──(fail)──> Try HTML  Parse Posted Date
             ↓                                 ↓
          Save to Database              Update Search Stats
+            ↓                                 ↓
+      Navigate Back                   Complete & Show Summary
                                               ↓
-                                    Complete & Show Summary
+                                    Browse with Web UI
 ```
 
 ## Important Considerations
@@ -231,20 +398,20 @@ LinkedIn actively blocks aggressive scraping:
 - Default max pages: 10 (configurable via MAX_PAGES_PER_SEARCH)
 - Consider proxy rotation for production (not implemented)
 
-### Error Handling Strategy
+### XSS Protection
 
-All scraping errors are logged to:
-- `logs/scraper.log` - Winston structured logs with full context
-- `scrape_errors` table - Database records for analysis
-- Console output - User-friendly error messages
-
-Use retry logic with exponential backoff (implemented via `p-retry` with 3 retries).
+Job descriptions contain user-generated HTML that must be sanitized:
+- Use DOMPurify before rendering any HTML content
+- Whitelist safe tags only (p, strong, ul, ol, li, etc.)
+- Strip dangerous tags (script, iframe, object, embed)
+- HTML entity decoding for display
+- Never use `dangerouslySetInnerHTML` without sanitization
 
 ## Testing Framework
 
 ### Unit Testing with Vitest
 
-The project includes comprehensive fixture-based unit tests covering all parsing and database functionality.
+The linkedin-scraper includes comprehensive fixture-based unit tests.
 
 **Test Structure:**
 ```
@@ -274,81 +441,78 @@ npm run test:coverage # With coverage report
 ```
 
 **Key Testing Features:**
-- **Fixture-based**: Uses real LinkedIn HTML (debug.html) as test input
+- **Fixture-based**: Uses real LinkedIn HTML as test input
 - **In-memory database**: SQLite in-memory for fast repository tests
 - **Mock Playwright Page**: JSDOM-based mock for Parser tests without browser
 - **White-box testing**: Tests internal implementation details
 - **Dependency injection**: Repositories accept optional database parameter
 
-**Parser Tests (26):**
-- Extract job count from various selector patterns
-- Extract job cards with all metadata (ID, title, company, location)
-- Handle pagination (hasNextPage, clickNextPage)
-- JSON-LD and HTML extraction strategies
-- Edge cases (empty listings, invalid data)
-- Data validation (numeric IDs, trimmed text)
-
-**Repository Tests (58):**
-- JobRepository (32): CRUD operations, filtering, searching, data integrity
-- SearchRepository (26): Search lifecycle, error logging, counter increments
-
-**JobFilter Tests (35):**
-- URL building with all filter combinations
-- Experience level/employment type mappings
-- Date posted and remote option filters
-- URL encoding and parameter ordering
-
-**Architectural Changes for Testability:**
-1. Repositories now accept optional database in constructor (dependency injection)
-2. Added missing CRUD methods: `findById()`, `update()`, `delete()`
-3. Parser uses updated LinkedIn selectors based on real HTML analysis
-4. Enhanced error handling with debug artifact saving
-
-### Integration Testing
-
-When testing the full scraper:
-
-1. **Start small**: Use `--limit 10` for initial tests
-2. **Monitor logs**: Check `logs/scraper.log` for errors
-3. **Verify data**: Use `npm run dev list` to inspect results
-4. **Check database**: SQLite file at `data/linkedin-jobs.db`
-5. **Watch for blocks**: If scraping stops early, you may be rate-limited
-6. **Test incrementally**: Add features one at a time and test thoroughly
-7. **Debug artifacts**: Check `logs/` for auto-saved screenshots and HTML on failures
-
 ## Common Issues
 
-### "Browser not initialized"
+### LinkedIn Scraper
+
+**"Browser not initialized"**
 - Run: `npx playwright install chromium`
 - Check browser dependencies on Linux systems
 
-### Rate limiting/blocking
+**Rate limiting/blocking**
 - Increase delays in `.env`: `REQUEST_DELAY_MIN=5000`
 - Reduce concurrency: `MAX_CONCURRENT_REQUESTS=1`
 - Lower limit: `--limit 20`
 - Wait 24 hours before retrying from same IP
 
-### Parsing failures
+**Parsing failures**
 - LinkedIn may have changed HTML structure
-- Check logs for specific selectors that failed
-- Parser has fallback strategies (JSON-LD → HTML)
-- May need to update selectors in Parser.ts
-- Debug artifacts: Auto-saved to `logs/` (screenshot + HTML) on first 3 failures per search
+- Check logs/ for debug artifacts (screenshot + HTML)
 - Analyze saved HTML to find new selector patterns
+- Parser has fallback strategies (JSON-LD → HTML → ID fallback)
+- May need to update selectors in Parser.ts
 
-### TypeScript errors
-- Ensure DOM types in lib: `"lib": ["ES2022", "DOM"]`
-- Code in `page.evaluate()` runs in browser context
-- Use proper type assertions for browser APIs
+**Modal overlays blocking clicks**
+- Auto-removed by Browser.removeModalOverlay()
+- Loops up to 10 times to handle stacked modals
+- Check browser console logs ([ModalRemoval] prefix)
 
-### Database locked errors
+**"logger is not defined" in browser context**
+- Code in page.evaluate() runs in browser, not Node.js
+- Use console.log instead of logger inside evaluate()
+- Browser console forwarded to Node.js via listeners
+
+**Database locked errors**
 - SQLite uses WAL mode to reduce locking
 - Close other connections to the database
 - Check file permissions on data/ directory
 
+**Migration warnings**
+- "ALTER TABLE jobs ADD COLUMN page_html" - column already exists
+- Migration checks for existence before adding
+- Safe to ignore if column exists
+
+### Job Browser
+
+**CORS errors**
+- Server must be running on port 3000
+- Client must proxy API requests in vite.config.ts
+- Check server/.env for correct configuration
+
+**Empty job list**
+- Ensure linkedin-scraper has run and populated database
+- Check DATABASE_PATH in server/.env
+- Verify database file exists and has data
+
+**HTML not rendering**
+- Check SafeHTML component is used
+- Verify DOMPurify is installed
+- Check browser console for errors
+
+**Filters not working**
+- Clear localStorage and refresh
+- Check filter state in Zustand DevTools
+- Verify API response includes filter options
+
 ## Environment Variables
 
-Configure via `.env` file in linkedin-scraper/:
+### linkedin-scraper/.env
 
 **Key settings:**
 - `DATABASE_PATH` - SQLite database location (default: ./data/linkedin-jobs.db)
@@ -365,24 +529,52 @@ Configure via `.env` file in linkedin-scraper/:
 - `PROXY_ENABLED` - Enable proxy (default: false)
 - `PROXY_HOST`, `PROXY_PORT`, `PROXY_USERNAME`, `PROXY_PASSWORD`
 
+### job-browser/server/.env
+
+**Settings:**
+- `PORT` - Server port (default: 3000)
+- `DATABASE_PATH` - SQLite database path (default: ../../linkedin-scraper/data/linkedin-jobs.db)
+- `CORS_ORIGIN` - Allowed CORS origins (default: http://localhost:5173)
+
 ## Adding New Features
+
+### LinkedIn Scraper
 
 When adding features to linkedin-scraper:
 
 1. **Update types** in `src/types/index.ts` first
 2. **Add database fields** in `src/database/schema.ts` and repositories
-3. **Implement business logic** in `src/services/`
-4. **Add CLI command** in `src/cli/commands/` and register in cli/index.ts
-5. **Update UI** in `src/cli/ui/` if needed
-6. **Update README.md** with usage examples
-7. **Test with small limits** before full runs
-8. **Update .env.example** if adding new config
+3. **Add migration** in `src/database/db.ts` (runMigrations function)
+4. **Implement business logic** in `src/services/`
+5. **Add CLI command** in `src/cli/commands/` and register in cli/index.ts
+6. **Update validator** in `src/utils/validators.ts` (Zod schema)
+7. **Update UI** in `src/cli/ui/` if needed
+8. **Write tests** in `tests/unit/` with fixtures
+9. **Update README.md** with usage examples
+10. **Update .env.example** if adding new config
+
+### Job Browser
+
+When adding features to job-browser:
+
+1. **Update shared types** in `shared/types.ts`
+2. **Add backend logic** in `server/src/services/`
+3. **Add API endpoint** in `server/src/routes/`
+4. **Update frontend API client** in `client/src/lib/api.ts`
+5. **Add React Query hook** in `client/src/hooks/`
+6. **Update UI components** in `client/src/components/` or `pages/`
+7. **Update Zustand store** if adding filters/state
+8. **Update Tailwind config** if adding new styles
+9. **Test thoroughly** (no automated tests yet)
+10. **Update README.md** with usage examples
 
 ## Dependencies to Note
 
+### LinkedIn Scraper
+
 **Core:**
 - `playwright` - Browser automation (chose over Puppeteer for better TypeScript support)
-- `better-sqlite3` - Synchronous SQLite (faster than async for this use case, simpler error handling)
+- `better-sqlite3` - Synchronous SQLite (faster than async, simpler error handling)
 - `drizzle-orm` - Type-safe ORM without code generation (lighter than Prisma)
 
 **CLI:**
@@ -391,23 +583,53 @@ When adding features to linkedin-scraper:
 - `chalk` - Terminal colors (most popular)
 - `ora` - Terminal spinners (elegant animations)
 - `cli-progress` - Progress bars (highly customizable)
-- `boxen` - Terminal boxes (nice formatting)
-- `cli-table3` - Tables (maintained fork of cli-table)
 
 **Utilities:**
-- `p-queue` - Concurrency control (promise-based, easy to use)
-- `p-retry` - Retry logic (exponential backoff support)
-- `date-fns` - Date parsing (LinkedIn uses relative dates like "2 days ago")
-- `zod` - Runtime validation (TypeScript-first, great DX)
-- `winston` - Logging (structured logging, transports, popular)
-- `dotenv` - Environment variables (standard)
+- `p-queue` - Concurrency control (promise-based)
+- `p-retry` - Retry logic (exponential backoff)
+- `date-fns` - Date parsing (LinkedIn uses relative dates)
+- `zod` - Runtime validation (TypeScript-first)
+- `winston` - Logging (structured logging)
+
+**Testing:**
+- `vitest` - Test runner (Vite-powered, faster than Jest)
+- `jsdom` - DOM implementation for Node.js
+- `happy-dom` - Alternative DOM for faster tests
+
+### Job Browser
+
+**Frontend:**
+- `react` + `react-dom` - UI framework
+- `react-router-dom` - Client-side routing
+- `@tanstack/react-query` - Server state management
+- `zustand` - Client state management (simpler than Redux)
+- `tailwindcss` - Utility-first CSS
+- `dompurify` - HTML sanitization
+- `isomorphic-dompurify` - Universal DOMPurify
+- `date-fns` - Date formatting
+- `lucide-react` - Icon library
+
+**Backend:**
+- `express` - Web framework
+- `better-sqlite3` - SQLite driver (shared with scraper)
+- `cors` - CORS middleware
+- `dotenv` - Environment variables
+
+**Build:**
+- `vite` - Frontend build tool
+- `typescript` - Type safety
+- `tsx` - TypeScript execution
+- `concurrently` - Run multiple commands
 
 ## CLI Commands Reference
 
+### linkedin-scraper
+
 **scrape** - Main scraping command
-- Options: position, location, experience-level, employment-type, date-posted, limit, interactive
+- Options: position, location, experience-level, employment-type, date-posted, remote-option, limit, refresh, interactive, log-browser-errors
 - Creates search record, launches browser, extracts jobs, saves to database
 - Shows real-time progress with stats
+- `--refresh` flag updates existing jobs instead of skipping
 
 **list** - View scraped jobs
 - Options: search-id, company, location, date-from, limit
@@ -424,35 +646,65 @@ When adding features to linkedin-scraper:
 - Deletes all jobs, searches, and errors
 - Prompts for confirmation unless --yes
 
+### job-browser
+
+No CLI commands - web application accessed via browser at http://localhost:5173
+
 ## Performance Characteristics
 
+### LinkedIn Scraper
 - **Scraping speed**: ~4-6 jobs per minute (varies by network, LinkedIn response time)
 - **Memory usage**: ~150-200 MB for Chromium + Node.js process
 - **Database size**: ~1-2 KB per job record (depends on description length)
 - **Network usage**: ~500 KB - 1 MB per job page load
 - **CPU usage**: Low (mostly I/O bound, waiting for page loads)
 
+### Job Browser
+- **Initial load**: ~100-200ms (depends on database size)
+- **Filter response**: <50ms (SQLite FTS5 is fast)
+- **Pagination**: <30ms per page
+- **Memory usage**: ~50-100 MB (Express + SQLite)
+- **Client bundle**: ~200-300 KB gzipped
+
 ## Future Enhancement Ideas
 
-Based on the original architecture design, potential enhancements:
+Based on the current architecture, potential enhancements:
 
+### LinkedIn Scraper
 1. **Email Notifications**: Alert when new jobs matching criteria are posted
 2. **ML Job Matching**: Score jobs based on user profile/resume
 3. **Company Insights**: Scrape company pages, employee reviews
-4. **Application Tracking**: Mark jobs as applied/rejected/interview
-5. **Resume Optimization**: Suggest resume keywords based on job descriptions
-6. **Advanced Deduplication**: ML-based similarity detection
-7. **Cloud Deployment**: Run as scheduled Lambda/Cloud Function
-8. **Web Dashboard**: React UI for browsing jobs
-9. **Proxy Rotation**: Automatic proxy switching for scale
-10. **API Interception**: Monitor LinkedIn's internal APIs
+4. **Advanced Deduplication**: ML-based similarity detection
+5. **Cloud Deployment**: Run as scheduled Lambda/Cloud Function
+6. **Proxy Rotation**: Automatic proxy switching for scale
+7. **API Interception**: Monitor LinkedIn's internal APIs
+8. **Scheduled Scraping**: Cron-based automatic scraping
+9. **Multi-platform**: Support Indeed, Glassdoor, etc.
+
+### Job Browser
+1. **Application Tracking**: Mark jobs as applied/rejected/interview
+2. **Resume Optimization**: Suggest keywords based on job descriptions
+3. **Job Analytics**: Visualize trends (salaries, locations, companies)
+4. **Saved Searches**: Save filter combinations
+5. **Email Alerts**: Notify on new jobs matching filters
+6. **Export to PDF**: Generate job reports
+7. **Company Research**: Link to company info, reviews
+8. **Skill Extraction**: Parse required skills from descriptions
+9. **Authentication**: User accounts and personalization
+10. **Mobile App**: React Native version
 
 ## Documentation Files
 
+### linkedin-scraper/
 - **README.md** - User guide with installation and usage examples
 - **SETUP.md** - Detailed installation instructions for different platforms
 - **how-to-scrape-linkedin.md** - Research on scraping methods, tools, APIs
 - **.env.example** - Template for environment configuration
+
+### job-browser/
+- **README.md** - Setup and usage guide
+- **QUICKSTART.md** - Quick start guide with examples
+- **server/.env.example** - Backend configuration template
 
 ## License
 
@@ -460,4 +712,4 @@ MIT License - Copyright (c) 2025 Mohamadmehdi Kharatizadeh
 
 ---
 
-**Note**: This project was built according to requirements in prompt.md and designed using architecture.md as the blueprint. Both files have been integrated into this documentation for future reference.
+**Note**: This project evolved from a simple scraper to a complete job search management system. The architecture.md and prompt.md files have been integrated into this documentation for reference.
