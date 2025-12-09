@@ -68,6 +68,31 @@ export class Browser {
 
       this.page = await this.context.newPage();
 
+      // Listen to browser console messages and forward to Node.js logger
+      this.page.on('console', (msg) => {
+        const type = msg.type();
+        const text = msg.text();
+
+        // Forward browser console messages to our logger
+        if (type === 'error') {
+          logger.error(`[Browser Console] ${text}`);
+        } else if (type === 'warning') {
+          logger.warn(`[Browser Console] ${text}`);
+        } else if (type === 'log') {
+          logger.info(`[Browser Console] ${text}`);
+        } else if (type === 'debug') {
+          logger.debug(`[Browser Console] ${text}`);
+        }
+      });
+
+      // Listen to page errors (uncaught exceptions in browser)
+      this.page.on('pageerror', (error) => {
+        logger.error('[Browser Page Error]', {
+          message: error.message,
+          stack: error.stack
+        });
+      });
+
       logger.info('Browser launched successfully');
     } catch (error) {
       logger.error('Failed to launch browser', { error });
@@ -89,7 +114,7 @@ export class Browser {
       await this.randomDelay(1000, 3000);
 
       // Remove modal overlay if present
-      await this.removeModalOverlayWithWait();
+      await this.removeModalOverlay();
     } catch (error) {
       logger.error('Navigation failed', { url, error });
       throw error;
@@ -151,8 +176,8 @@ export class Browser {
   }
 
   /**
-   * Remove modal overlay from the page immediately if present
-   * Does not wait - checks and removes synchronously
+   * Remove modal overlay from the page if present
+   * Waits up to 2 seconds for the element to appear, then removes it
    */
   async removeModalOverlay(): Promise<void> {
     if (!this.page) {
@@ -160,62 +185,62 @@ export class Browser {
     }
 
     try {
-      const removed = await this.page.evaluate(() => {
-        const modalOverlay = document.querySelector('.modal__overlay');
-        if (modalOverlay) {
-          modalOverlay.remove();
-          return true;
-        }
-        return false;
-      });
+      logger.debug('Checking for modal overlay (2s timeout)');
 
-      if (removed) {
-        logger.debug('Modal overlay removed from DOM');
-      }
-    } catch (error: any) {
-      logger.debug('Error checking for modal overlay', { error: error.message });
-    }
-  }
-
-  /**
-   * Remove modal overlay from the page if present (with timeout)
-   * Waits up to 5 seconds for .modal__overlay to appear, then removes it from DOM
-   * Continues without error if not found
-   */
-  private async removeModalOverlayWithWait(): Promise<void> {
-    if (!this.page) {
-      throw new Error('Browser not initialized');
-    }
-
-    try {
-      logger.debug('Checking for modal overlay');
-
-      // Wait for modal overlay with 5 second timeout
+      // Wait up to 2 seconds for modal overlay to appear
       await this.page.waitForSelector('.modal__overlay', {
-        timeout: 5000,
+        timeout: 2000,
         state: 'attached'
       });
 
-      // Modal found - remove it from DOM
-      logger.info('Modal overlay detected, removing from DOM');
-      await this.page.evaluate(() => {
+      // Modal found - try multiple removal strategies
+      logger.debug('Modal overlay detected, attempting removal');
+      const removed = await this.page.evaluate(() => {
+        let removed = false;
+
+        // Strategy 1: Remove .modal__overlay
         const modalOverlay = document.querySelector('.modal__overlay');
         if (modalOverlay) {
           modalOverlay.remove();
-          return true;
+          removed = true;
+          console.log('[ModalRemoval] Removed .modal__overlay element');
         }
-        return false;
+
+        // Strategy 2: Remove parent modal container if it exists
+        const modalContainer = document.querySelector('.modal, .artdeco-modal, [role="dialog"]');
+        if (modalContainer && modalContainer.querySelector('.modal__overlay')) {
+          modalContainer.remove();
+          removed = true;
+          console.log('[ModalRemoval] Removed parent modal container');
+        }
+
+        // Strategy 3: Click close button if available
+        const closeButton = document.querySelector('.modal__dismiss, .artdeco-modal__dismiss, [data-test-modal-close-btn]');
+        if (closeButton && closeButton instanceof HTMLElement) {
+          closeButton.click();
+          removed = true;
+          console.log('[ModalRemoval] Clicked close button to dismiss modal');
+        }
+
+        return removed;
       });
 
-      logger.info('Modal overlay removed successfully');
-      await this.randomDelay(300, 500);
+      if (removed) {
+        logger.info('Modal overlay removed successfully from DOM');
+      } else {
+        logger.warn('Modal overlay was detected but could not be removed (waitForSelector succeeded but querySelector returned null)');
+      }
     } catch (error: any) {
       // TimeoutError is expected when modal doesn't exist - this is not an error
       if (error.name === 'TimeoutError' || error.message?.includes('Timeout')) {
-        logger.debug('No modal overlay found (this is normal)');
+        logger.debug('No modal overlay found within 2 seconds (this is normal)');
       } else {
-        // Log unexpected errors but don't throw - we want to continue
-        logger.warn('Unexpected error while checking for modal overlay', { error: error.message });
+        // Log full error details for unexpected errors
+        logger.warn('Unexpected error while checking for modal overlay', {
+          errorName: error.name,
+          errorMessage: error.message,
+          errorStack: error.stack
+        });
       }
     }
   }

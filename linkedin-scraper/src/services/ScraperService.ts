@@ -257,6 +257,16 @@ export class ScraperService {
             descriptionLength: jobData.description?.length || 0
           });
 
+          // Check again if job was already saved (can happen during retries)
+          const alreadyExists = await this.jobRepo.findByJobId(jobData.id);
+          if (alreadyExists) {
+            logger.info('Job already saved during retry, skipping database insert', {
+              jobId: jobData.id,
+              title: jobData.title
+            });
+            return; // Exit successfully without re-inserting
+          }
+
           // Create job record
           const job: Omit<Job, 'id' | 'created_at' | 'updated_at'> = {
             job_id: jobData.id,
