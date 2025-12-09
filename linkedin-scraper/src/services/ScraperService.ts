@@ -211,63 +211,128 @@ export class ScraperService {
       return;
     }
 
+    logger.info('Starting job scrape', {
+      jobId: card.id,
+      title: card.title,
+      company: card.company,
+      searchId
+    });
+
     // Retry logic for scraping
-    await pRetry(
-      async () => {
-        // Click job card to load details
-        await this.browser.click(card.selector);
-        await this.randomDelay(2000, 4000);
+    try {
+      await pRetry(
+        async () => {
+          logger.debug('Attempting to scrape job details', { jobId: card.id, title: card.title });
 
-        // Try multiple extraction strategies
-        let jobData: JobData | null = await parser.tryJsonLdExtraction();
+          // Click job card to load details
+          await this.browser.click(card.selector);
+          await this.randomDelay(1500, 3000); // Reduced from 2000-4000
 
-        if (!jobData) {
-          jobData = await parser.tryHtmlExtraction();
-        }
+          // Try multiple extraction strategies
+          logger.debug('Trying JSON-LD extraction', { jobId: card.id });
+          let jobData: JobData | null = await parser.tryJsonLdExtraction();
 
-        if (!jobData || !jobData.id) {
-          throw new Error('Failed to extract job data');
-        }
+          if (!jobData) {
+            logger.debug('JSON-LD extraction failed, trying HTML extraction', { jobId: card.id });
+            jobData = await parser.tryHtmlExtraction();
+          }
 
-        // Create job record
-        const job: Omit<Job, 'id' | 'created_at' | 'updated_at'> = {
-          job_id: jobData.id,
-          title: jobData.title,
-          company: jobData.company,
-          company_id: jobData.companyId,
-          location: jobData.location,
-          description: jobData.description,
-          employment_type: jobData.employmentType,
-          seniority_level: jobData.seniorityLevel,
-          industry: jobData.industry,
-          salary_min: jobData.salaryMin,
-          salary_max: jobData.salaryMax,
-          salary_currency: jobData.salaryCurrency,
-          job_url: jobData.url || card.id,
-          apply_url: jobData.applyUrl,
-          posted_at: parsePostedDate(jobData.postedDate || 'today'),
-          scraped_at: new Date(),
-          search_id: searchId,
-          raw_data: JSON.stringify(jobData)
-        };
+          if (!jobData || !jobData.id) {
+            logger.warn('Both extraction strategies failed', {
+              jobId: card.id,
+              title: card.title,
+              hasJobData: !!jobData,
+              hasJobId: jobData?.id
+            });
+            throw new Error('Failed to extract job data');
+          }
 
-        // Save to database
-        await this.jobRepo.create(job);
-        await this.searchRepo.incrementSuccessful(searchId);
-
-        logger.info('Job scraped successfully', { jobId: jobData.id, title: jobData.title });
-      },
-      {
-        retries: parseInt(process.env.MAX_RETRIES || '3'),
-        onFailedAttempt: (error) => {
-          logger.warn('Retry attempt', {
-            attempt: error.attemptNumber,
-            retriesLeft: error.retriesLeft,
-            error: error.message
+          logger.debug('Job data extracted successfully', {
+            jobId: jobData.id,
+            title: jobData.title,
+            hasDescription: !!jobData.description,
+            descriptionLength: jobData.description?.length || 0
           });
+
+          // Create job record
+          const job: Omit<Job, 'id' | 'created_at' | 'updated_at'> = {
+            job_id: jobData.id,
+            title: jobData.title,
+            company: jobData.company,
+            company_id: jobData.companyId,
+            location: jobData.location,
+            description: jobData.description,
+            employment_type: jobData.employmentType,
+            seniority_level: jobData.seniorityLevel,
+            industry: jobData.industry,
+            salary_min: jobData.salaryMin,
+            salary_max: jobData.salaryMax,
+            salary_currency: jobData.salaryCurrency,
+            job_url: jobData.url || card.id,
+            apply_url: jobData.applyUrl,
+            posted_at: parsePostedDate(jobData.postedDate || 'today'),
+            scraped_at: new Date(),
+            search_id: searchId,
+            raw_data: JSON.stringify(jobData)
+          };
+
+          // Save to database
+          await this.jobRepo.create(job);
+          await this.searchRepo.incrementSuccessful(searchId);
+
+          logger.info('Job scraped successfully', {
+            jobId: jobData.id,
+            title: jobData.title,
+            company: jobData.company
+          });
+        },
+        {
+          retries: parseInt(process.env.MAX_RETRIES || '3'),
+          onFailedAttempt: async (error) => {
+            logger.warn('Retry attempt failed', {
+              jobId: card.id,
+              title: card.title,
+              attempt: error.attemptNumber,
+              retriesLeft: error.retriesLeft,
+              error: error.message,
+              willRetry: error.retriesLeft > 0
+            });
+
+            // Collect debug artifacts on each failed attempt
+            await this.saveDebugArtifacts(`job-retry-attempt-${error.attemptNumber}`, {
+              jobId: card.id,
+              title: card.title,
+              company: card.company,
+              selector: card.selector,
+              searchId,
+              attemptNumber: error.attemptNumber,
+              retriesLeft: error.retriesLeft,
+              error: error.message
+            });
+          }
         }
-      }
-    );
+      );
+    } catch (error) {
+      // All retries exhausted - save debug artifacts
+      logger.error('All retry attempts exhausted for job', {
+        jobId: card.id,
+        title: card.title,
+        company: card.company,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      await this.saveDebugArtifacts('job-retry-exhausted', {
+        jobId: card.id,
+        title: card.title,
+        company: card.company,
+        selector: card.selector,
+        searchId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      // Re-throw to let parent handler deal with it
+      throw error;
+    }
   }
 
   private async randomDelay(min: number, max: number): Promise<void> {
