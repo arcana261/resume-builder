@@ -40,6 +40,10 @@ function buildCliCommand(options: ScrapeOptions): string {
     args.push(`--limit ${options.limit}`);
   }
 
+  if (options.refresh) {
+    args.push(`--refresh`);
+  }
+
   return args.join(' ');
 }
 
@@ -56,6 +60,7 @@ export function createScrapeCommand(): Command {
     .option('-r, --remote-option <option>', 'Remote work option (On-site, Remote, Hybrid)')
     .option('-n, --limit <number>', 'Maximum number of jobs to scrape', '50')
     .option('-i, --interactive', 'Interactive mode with prompts')
+    .option('--refresh', 'Force refresh existing job postings')
     .option('--log-browser-errors', 'Log browser page errors (default: false)')
     .action(async (options) => {
       try {
@@ -82,7 +87,8 @@ export function createScrapeCommand(): Command {
             employmentType: options.employmentType,
             datePosted: options.datePosted,
             remoteOption: options.remoteOption,
-            limit: parseInt(options.limit)
+            limit: parseInt(options.limit),
+            refresh: options.refresh || false
           };
 
           // Validate options
@@ -106,6 +112,9 @@ export function createScrapeCommand(): Command {
         }
         if (scrapeOptions.employmentType && scrapeOptions.employmentType.length > 0) {
           console.log(chalk.white('Type:'), scrapeOptions.employmentType.join(', '));
+        }
+        if (scrapeOptions.refresh) {
+          console.log(chalk.white('Refresh:'), chalk.yellow('Yes (will update existing jobs)'));
         }
         console.log('');
 

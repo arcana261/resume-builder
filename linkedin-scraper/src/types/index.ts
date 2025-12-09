@@ -18,6 +18,7 @@ export interface Job {
   scraped_at: Date;
   search_id: number;
   raw_data: string;
+  page_html?: string;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -55,6 +56,7 @@ export interface ScrapeOptions {
   remoteOption?: string;
   salary?: { min?: number; max?: number };
   limit: number;
+  refresh?: boolean;
 }
 
 export interface JobFilters {

@@ -21,6 +21,7 @@ export const jobs = sqliteTable('jobs', {
   scraped_at: integer('scraped_at', { mode: 'timestamp' }).notNull(),
   search_id: integer('search_id').notNull().references(() => searches.id),
   raw_data: text('raw_data').notNull(),
+  page_html: text('page_html'),
   created_at: integer('created_at', { mode: 'timestamp' }).default(sql`(unixepoch())`).notNull(),
   updated_at: integer('updated_at', { mode: 'timestamp' }).default(sql`(unixepoch())`).notNull()
 });

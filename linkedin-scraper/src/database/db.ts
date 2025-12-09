@@ -97,6 +97,27 @@ function initializeDatabase(db: ReturnType<typeof drizzle>) {
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at)`);
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_jobs_search_id ON jobs(search_id)`);
   db.run(sql`CREATE INDEX IF NOT EXISTS idx_searches_created_at ON searches(created_at)`);
+
+  // Run migrations
+  runMigrations(db);
+}
+
+function runMigrations(db: ReturnType<typeof drizzle>) {
+  // Migration: Add page_html column to jobs table
+  try {
+    // Check if column exists first
+    const tableInfo = sqliteInstance?.prepare('PRAGMA table_info(jobs)').all() as Array<{ name: string }>;
+    const hasPageHtml = tableInfo?.some(col => col.name === 'page_html');
+
+    if (!hasPageHtml) {
+      db.run(sql`ALTER TABLE jobs ADD COLUMN page_html TEXT DEFAULT NULL`);
+    }
+  } catch (error: any) {
+    // Silently ignore errors - column likely already exists
+    if (!error.message?.includes('duplicate column') && !error.message?.includes('already exists')) {
+      console.warn('Migration warning:', error.message);
+    }
+  }
 }
 
 export function closeDatabase() {

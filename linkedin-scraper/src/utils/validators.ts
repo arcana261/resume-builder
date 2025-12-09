@@ -11,7 +11,8 @@ export const ScrapeOptionsSchema = z.object({
     min: z.number().optional(),
     max: z.number().optional()
   }).optional(),
-  limit: z.number().min(1).max(1000).default(50)
+  limit: z.number().min(1).max(1000).default(50),
+  refresh: z.boolean().optional().default(false)
 });
 
 export const JobSchema = z.object({

@@ -8,7 +8,7 @@ import { SearchRepository } from '../database/repositories/SearchRepository.js';
 import { ProgressUI } from '../cli/ui/ProgressUI.js';
 import { parsePostedDate } from '../utils/dateHelpers.js';
 import { logger } from '../utils/logger.js';
-import type { ScrapeOptions, ScrapeResult, Job, JobCard, JobData } from '../types/index.js';
+import type { ScrapeOptions, ScrapeResult, JobCard, JobData } from '../types/index.js';
 
 export interface ScraperServiceOptions {
   logBrowserErrors?: boolean;
@@ -121,7 +121,7 @@ export class ScraperService {
 
           await this.queue.add(async () => {
             try {
-              await this.scrapeJobDetails(card, searchId!, parser);
+              await this.scrapeJobDetails(card, searchId!, parser, options.refresh || false);
 
               // Navigate back to search results page after successful scrape
               await this.browser.goBack();
@@ -220,13 +220,17 @@ export class ScraperService {
     }
   }
 
-  private async scrapeJobDetails(card: JobCard, searchId: number, parser: Parser): Promise<void> {
+  private async scrapeJobDetails(card: JobCard, searchId: number, parser: Parser, refresh: boolean = false): Promise<void> {
     // Check if job already exists
     const existing = await this.jobRepo.findByJobId(card.id);
-    if (existing) {
+    if (existing && !refresh) {
       logger.info('Job already exists, skipping', { jobId: card.id });
       this.progressUI.incrementDuplicates();
       return;
+    }
+
+    if (existing && refresh) {
+      logger.info('Job already exists but refresh enabled, will update', { jobId: card.id });
     }
 
     logger.info('Starting job scrape', {
@@ -287,7 +291,7 @@ export class ScraperService {
 
           // Check again if job was already saved (can happen during retries)
           const alreadyExists = await this.jobRepo.findByJobId(jobData.id);
-          if (alreadyExists) {
+          if (alreadyExists && !refresh) {
             logger.info('Job already saved during retry, skipping database insert', {
               jobId: jobData.id,
               title: jobData.title
@@ -295,8 +299,15 @@ export class ScraperService {
             return; // Exit successfully without re-inserting
           }
 
-          // Create job record
-          const job: Omit<Job, 'id' | 'created_at' | 'updated_at'> = {
+          // Capture page HTML
+          const pageHtml = await this.browser.getPage().content();
+          logger.debug('Captured page HTML', {
+            jobId: jobData.id,
+            htmlLength: pageHtml.length
+          });
+
+          // Prepare job data
+          const jobDataFields = {
             job_id: jobData.id,
             title: jobData.title,
             company: jobData.company,
@@ -314,18 +325,30 @@ export class ScraperService {
             posted_at: parsePostedDate(jobData.postedDate || 'today'),
             scraped_at: new Date(),
             search_id: searchId,
-            raw_data: JSON.stringify(jobData)
+            raw_data: JSON.stringify(jobData),
+            page_html: pageHtml
           };
 
-          // Save to database
-          await this.jobRepo.create(job);
-          await this.searchRepo.incrementSuccessful(searchId);
+          // Save or update database
+          if (alreadyExists && refresh) {
+            // Update existing job
+            await this.jobRepo.update(alreadyExists.id!, jobDataFields);
+            logger.info('Job updated successfully', {
+              jobId: jobData.id,
+              title: jobData.title,
+              company: jobData.company
+            });
+          } else {
+            // Create new job
+            await this.jobRepo.create(jobDataFields);
+            logger.info('Job scraped successfully', {
+              jobId: jobData.id,
+              title: jobData.title,
+              company: jobData.company
+            });
+          }
 
-          logger.info('Job scraped successfully', {
-            jobId: jobData.id,
-            title: jobData.title,
-            company: jobData.company
-          });
+          await this.searchRepo.incrementSuccessful(searchId);
         },
         {
           retries: parseInt(process.env.MAX_RETRIES || '3'),
