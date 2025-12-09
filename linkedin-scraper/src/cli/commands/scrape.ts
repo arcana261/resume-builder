@@ -56,6 +56,7 @@ export function createScrapeCommand(): Command {
     .option('-r, --remote-option <option>', 'Remote work option (On-site, Remote, Hybrid)')
     .option('-n, --limit <number>', 'Maximum number of jobs to scrape', '50')
     .option('-i, --interactive', 'Interactive mode with prompts')
+    .option('--log-browser-errors', 'Log browser page errors (default: false)')
     .action(async (options) => {
       try {
         let scrapeOptions: ScrapeOptions;
@@ -109,7 +110,7 @@ export function createScrapeCommand(): Command {
         console.log('');
 
         // Run scraper
-        const scraper = new ScraperService();
+        const scraper = new ScraperService({ logBrowserErrors: options.logBrowserErrors || false });
         const result = await scraper.scrape(scrapeOptions);
 
         if (result.success) {

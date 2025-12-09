@@ -82,7 +82,7 @@ export class Parser {
         return null;
       }
 
-      logger.info('Extracted data using JSON-LD strategy');
+      logger.info('Extracted data using JSON-LD strategy:', jsonLdData);
 
       return this.normalizeJobPosting(jsonLdData);
     } catch (error) {

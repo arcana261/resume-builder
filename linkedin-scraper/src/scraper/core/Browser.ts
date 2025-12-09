@@ -10,6 +10,7 @@ export interface BrowserOptions {
     password?: string;
   };
   stealth?: boolean;
+  logBrowserErrors?: boolean;
 }
 
 export class Browser {
@@ -69,29 +70,33 @@ export class Browser {
       this.page = await this.context.newPage();
 
       // Listen to browser console messages and forward to Node.js logger
+      /**
       this.page.on('console', (msg) => {
         const type = msg.type();
         const text = msg.text();
 
         // Forward browser console messages to our logger
         if (type === 'error') {
-          logger.error(`[Browser Console] ${text}`);
+          //logger.error(`[Browser Console] ${text}`);
         } else if (type === 'warning') {
-          logger.warn(`[Browser Console] ${text}`);
+          //logger.warn(`[Browser Console] ${text}`);
         } else if (type === 'log') {
-          logger.info(`[Browser Console] ${text}`);
+          //logger.info(`[Browser Console] ${text}`);
         } else if (type === 'debug') {
-          logger.debug(`[Browser Console] ${text}`);
+          //logger.debug(`[Browser Console] ${text}`);
         }
       });
+      **/
 
-      // Listen to page errors (uncaught exceptions in browser)
-      this.page.on('pageerror', (error) => {
-        logger.error('[Browser Page Error]', {
-          message: error.message,
-          stack: error.stack
+      // Listen to page errors (uncaught exceptions in browser) - optional
+      if (this.options.logBrowserErrors) {
+        this.page.on('pageerror', (error) => {
+          logger.error('[Browser Page Error]', {
+            message: error.message,
+            stack: error.stack
+          });
         });
-      });
+      }
 
       logger.info('Browser launched successfully');
     } catch (error) {
@@ -138,6 +143,25 @@ export class Browser {
     await this.randomDelay(500, 1500);
   }
 
+  async goBack(): Promise<void> {
+    if (!this.page) {
+      throw new Error('Browser not initialized');
+    }
+
+    try {
+      logger.debug('Navigating back in browser history');
+      await this.page.goBack({
+        waitUntil: 'domcontentloaded',
+        timeout: 10000
+      });
+      await this.randomDelay(500, 1000);
+      logger.debug('Successfully navigated back');
+    } catch (error) {
+      logger.warn('Failed to navigate back in history', { error });
+      throw error;
+    }
+  }
+
   async getText(selector: string): Promise<string | null> {
     if (!this.page) {
       throw new Error('Browser not initialized');
@@ -177,7 +201,8 @@ export class Browser {
 
   /**
    * Remove modal overlay from the page if present
-   * Waits up to 2 seconds for the element to appear, then removes it
+   * Waits up to 2 seconds for the element to appear, then removes all modal overlays
+   * Repeats until no more modal overlays are found
    */
   async removeModalOverlay(): Promise<void> {
     if (!this.page) {
@@ -193,40 +218,62 @@ export class Browser {
         state: 'attached'
       });
 
-      // Modal found - try multiple removal strategies
-      logger.debug('Modal overlay detected, attempting removal');
-      const removed = await this.page.evaluate(() => {
-        let removed = false;
+      // Modal found - keep removing until all are gone
+      let totalRemoved = 0;
+      let hasMoreModals = true;
+      const maxAttempts = 10; // Prevent infinite loop
 
-        // Strategy 1: Remove .modal__overlay
-        const modalOverlay = document.querySelector('.modal__overlay');
-        if (modalOverlay) {
-          modalOverlay.remove();
-          removed = true;
-          console.log('[ModalRemoval] Removed .modal__overlay element');
+      while (hasMoreModals && totalRemoved < maxAttempts) {
+        logger.debug(`Modal removal attempt ${totalRemoved + 1}`);
+
+        const removed = await this.page.evaluate(() => {
+          let removed = false;
+
+          // Strategy 1: Remove .modal__overlay
+          const modalOverlay = document.querySelector('.modal__overlay');
+          if (modalOverlay) {
+            modalOverlay.remove();
+            removed = true;
+            console.log('[ModalRemoval] Removed .modal__overlay element');
+          }
+
+          // Strategy 2: Remove parent modal container if it exists
+          const modalContainer = document.querySelector('.modal, .artdeco-modal, [role="dialog"]');
+          if (modalContainer && modalContainer.querySelector('.modal__overlay')) {
+            modalContainer.remove();
+            removed = true;
+            console.log('[ModalRemoval] Removed parent modal container');
+          }
+
+          // Strategy 3: Click close button if available
+          const closeButton = document.querySelector('.modal__dismiss, .artdeco-modal__dismiss, [data-test-modal-close-btn]');
+          if (closeButton && closeButton instanceof HTMLElement) {
+            closeButton.click();
+            removed = true;
+            console.log('[ModalRemoval] Clicked close button to dismiss modal');
+          }
+
+          return removed;
+        });
+
+        if (removed) {
+          totalRemoved++;
+          logger.debug(`Removed modal overlay (${totalRemoved} total)`);
+
+          // Wait a bit for any animations or new modals to appear
+          await this.randomDelay(200, 400);
+
+          // Check if there are more modals
+          const hasMore = await this.page.$('.modal__overlay');
+          hasMoreModals = hasMore !== null;
+        } else {
+          // No modal found, exit loop
+          hasMoreModals = false;
         }
+      }
 
-        // Strategy 2: Remove parent modal container if it exists
-        const modalContainer = document.querySelector('.modal, .artdeco-modal, [role="dialog"]');
-        if (modalContainer && modalContainer.querySelector('.modal__overlay')) {
-          modalContainer.remove();
-          removed = true;
-          console.log('[ModalRemoval] Removed parent modal container');
-        }
-
-        // Strategy 3: Click close button if available
-        const closeButton = document.querySelector('.modal__dismiss, .artdeco-modal__dismiss, [data-test-modal-close-btn]');
-        if (closeButton && closeButton instanceof HTMLElement) {
-          closeButton.click();
-          removed = true;
-          console.log('[ModalRemoval] Clicked close button to dismiss modal');
-        }
-
-        return removed;
-      });
-
-      if (removed) {
-        logger.info('Modal overlay removed successfully from DOM');
+      if (totalRemoved > 0) {
+        logger.info(`Modal overlay cleanup complete: removed ${totalRemoved} modal(s)`);
       } else {
         logger.warn('Modal overlay was detected but could not be removed (waitForSelector succeeded but querySelector returned null)');
       }

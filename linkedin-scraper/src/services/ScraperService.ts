@@ -10,6 +10,10 @@ import { parsePostedDate } from '../utils/dateHelpers.js';
 import { logger } from '../utils/logger.js';
 import type { ScrapeOptions, ScrapeResult, Job, JobCard, JobData } from '../types/index.js';
 
+export interface ScraperServiceOptions {
+  logBrowserErrors?: boolean;
+}
+
 export class ScraperService {
   private browser: Browser;
   private jobRepo: JobRepository;
@@ -18,10 +22,11 @@ export class ScraperService {
   private queue: PQueue;
   private jobFilter: JobFilter;
 
-  constructor() {
+  constructor(options: ScraperServiceOptions = {}) {
     this.browser = new Browser({
       headless: process.env.HEADLESS !== 'false',
-      type: (process.env.BROWSER_TYPE as any) || 'chromium'
+      type: (process.env.BROWSER_TYPE as any) || 'chromium',
+      logBrowserErrors: options.logBrowserErrors || false
     });
 
     this.jobRepo = new JobRepository();
@@ -117,6 +122,11 @@ export class ScraperService {
           await this.queue.add(async () => {
             try {
               await this.scrapeJobDetails(card, searchId!, parser);
+
+              // Navigate back to search results page after successful scrape
+              await this.browser.goBack();
+              await this.randomDelay(500, 1000);
+
               scrapedCount++;
               this.progressUI.incrementSuccess();
               this.progressUI.update(scrapedCount, `Scraped: ${card.title} at ${card.company}`);
@@ -124,6 +134,14 @@ export class ScraperService {
               logger.error('Failed to scrape job', { card, error });
               this.progressUI.incrementFailed();
               await this.searchRepo.incrementFailed(searchId!);
+
+              // Try to navigate back even if scraping failed
+              try {
+                await this.browser.goBack();
+                await this.randomDelay(500, 1000);
+              } catch (backError) {
+                logger.warn('Failed to navigate back after scraping error', { backError });
+              }
 
               // Save debug artifacts for first few failures
               const failedCount = await this.searchRepo.findById(searchId!).then(s => s?.failed_scrapes || 0);
@@ -224,6 +242,9 @@ export class ScraperService {
         async () => {
           logger.debug('Attempting to scrape job details', { jobId: card.id, title: card.title });
 
+          // Remove modal overlay if present before clicking job card
+          await this.browser.removeModalOverlay();
+
           // Click job card to load details
           await this.browser.click(card.selector);
           await this.randomDelay(1500, 3000); // Reduced from 2000-4000
@@ -240,14 +261,21 @@ export class ScraperService {
             jobData = await parser.tryHtmlExtraction();
           }
 
-          if (!jobData || !jobData.id) {
-            logger.warn('Both extraction strategies failed', {
+          if (!jobData) {
+            logger.warn('Both extraction strategies failed - no job data', {
               jobId: card.id,
-              title: card.title,
-              hasJobData: !!jobData,
-              hasJobId: jobData?.id
+              title: card.title
             });
             throw new Error('Failed to extract job data');
+          }
+
+          // Use card.id as fallback if JSON-LD doesn't have an identifier
+          if (!jobData.id) {
+            logger.debug('JSON-LD missing identifier, using card ID as fallback', {
+              cardId: card.id,
+              title: jobData.title
+            });
+            jobData.id = card.id;
           }
 
           logger.debug('Job data extracted successfully', {
