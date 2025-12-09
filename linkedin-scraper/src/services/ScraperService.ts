@@ -228,6 +228,9 @@ export class ScraperService {
           await this.browser.click(card.selector);
           await this.randomDelay(1500, 3000); // Reduced from 2000-4000
 
+          // Remove modal overlay if present after clicking job card
+          await this.browser.removeModalOverlay();
+
           // Try multiple extraction strategies
           logger.debug('Trying JSON-LD extraction', { jobId: card.id });
           let jobData: JobData | null = await parser.tryJsonLdExtraction();

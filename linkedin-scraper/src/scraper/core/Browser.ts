@@ -87,6 +87,9 @@ export class Browser {
         timeout: 30000
       });
       await this.randomDelay(1000, 3000);
+
+      // Remove modal overlay if present
+      await this.removeModalOverlayWithWait();
     } catch (error) {
       logger.error('Navigation failed', { url, error });
       throw error;
@@ -145,6 +148,76 @@ export class Browser {
       window.scrollBy(0, window.innerHeight);
     });
     await this.randomDelay(500, 1500);
+  }
+
+  /**
+   * Remove modal overlay from the page immediately if present
+   * Does not wait - checks and removes synchronously
+   */
+  async removeModalOverlay(): Promise<void> {
+    if (!this.page) {
+      throw new Error('Browser not initialized');
+    }
+
+    try {
+      const removed = await this.page.evaluate(() => {
+        const modalOverlay = document.querySelector('.modal__overlay');
+        if (modalOverlay) {
+          modalOverlay.remove();
+          return true;
+        }
+        return false;
+      });
+
+      if (removed) {
+        logger.debug('Modal overlay removed from DOM');
+      }
+    } catch (error: any) {
+      logger.debug('Error checking for modal overlay', { error: error.message });
+    }
+  }
+
+  /**
+   * Remove modal overlay from the page if present (with timeout)
+   * Waits up to 5 seconds for .modal__overlay to appear, then removes it from DOM
+   * Continues without error if not found
+   */
+  private async removeModalOverlayWithWait(): Promise<void> {
+    if (!this.page) {
+      throw new Error('Browser not initialized');
+    }
+
+    try {
+      logger.debug('Checking for modal overlay');
+
+      // Wait for modal overlay with 5 second timeout
+      await this.page.waitForSelector('.modal__overlay', {
+        timeout: 5000,
+        state: 'attached'
+      });
+
+      // Modal found - remove it from DOM
+      logger.info('Modal overlay detected, removing from DOM');
+      await this.page.evaluate(() => {
+        const modalOverlay = document.querySelector('.modal__overlay');
+        if (modalOverlay) {
+          modalOverlay.remove();
+          return true;
+        }
+        return false;
+      });
+
+      logger.info('Modal overlay removed successfully');
+      await this.randomDelay(300, 500);
+    } catch (error: any) {
+      // TimeoutError is expected when modal doesn't exist - this is not an error
+      if (error.name === 'TimeoutError' || error.message?.includes('Timeout')) {
+        logger.debug('No modal overlay found (this is normal)');
+      } else {
+        // Log unexpected errors but don't throw - we want to continue
+        logger.warn('Unexpected error while checking for modal overlay', { error: error.message });
+      }
+    }
   }
 
   async close(): Promise<void> {
