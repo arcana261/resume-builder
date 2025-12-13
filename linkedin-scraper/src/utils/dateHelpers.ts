@@ -1,11 +1,19 @@
 import { subDays, subHours, subWeeks, subMonths } from 'date-fns';
 
 /**
- * Parse LinkedIn's relative date strings to actual Date objects
- * Examples: "2 days ago", "1 week ago", "3 hours ago"
+ * Parse LinkedIn's date strings to actual Date objects
+ * Handles both ISO date strings and relative date strings
+ * Examples: "2025-12-09T14:25:55.000Z", "2 days ago", "1 week ago", "3 hours ago"
  */
 export function parsePostedDate(dateString: string): Date {
   const now = new Date();
+
+  // First, try to parse as ISO date string or standard date format
+  const isoDate = new Date(dateString);
+  if (!isNaN(isoDate.getTime())) {
+    return isoDate;
+  }
+
   const lowerDate = dateString.toLowerCase().trim();
 
   // Match patterns like "X hours/days/weeks/months ago"
