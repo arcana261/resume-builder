@@ -11,6 +11,7 @@ A TypeScript CLI application for scraping LinkedIn job postings with advanced fi
 **Features:**
 - 🔍 Advanced filtering (position, location, experience level, employment type, date posted, remote work)
 - 💾 Local SQLite database storage with full-text search
+- 🛡️ **Enterprise anti-detection system** (6 phases, fingerprinting, behavioral simulation, ML patterns)
 - 📊 Real-time progress tracking with terminal UI
 - 🎯 Multi-strategy parsing (JSON-LD, HTML fallback, job ID fallback)
 - 🔄 Automatic retry logic with exponential backoff and debug artifacts
@@ -221,6 +222,58 @@ Both applications use the same SQLite database located at `linkedin-scraper/data
 - Comprehensive error logging
 - Debug artifacts (screenshots + HTML on failures)
 
+### Anti-Detection System
+
+The LinkedIn scraper includes an enterprise-grade anti-detection system implemented across **6 phases** with 16 TypeScript modules (~4,500+ lines):
+
+**Phase 1: Core Fingerprinting**
+- Browser fingerprint randomization (viewport, user-agent, locale, timezone, platform)
+- Stealth patches to hide automation (WebDriver, automation flags)
+- Screen resolution and pixel ratio randomization
+
+**Phase 2: Behavioral Simulation**
+- Human-like mouse movement with Bézier curves
+- Natural scrolling patterns with variable speeds
+- Reading time simulation based on content length
+- Hover behavior before interactions
+
+**Phase 3: Network Management**
+- HTTP header randomization
+- Cookie and session persistence
+- Storage data management
+
+**Phase 4: Advanced Fingerprinting**
+- Canvas fingerprinting with noise injection
+- WebGL parameter randomization
+- Audio context fingerprinting
+- Font enumeration randomization
+
+**Phase 5: Detection Monitoring**
+- CAPTCHA detection (reCAPTCHA, hCaptcha)
+- Rate limit detection (HTTP 429, retry-after headers)
+- Block detection (Cloudflare, anti-bot services)
+- Adaptive delay multipliers (1.2x-5.0x based on detection)
+- Automatic abort on critical detections
+
+**Phase 6: Machine Learning Patterns**
+- **Timing Analysis:** Predicts optimal delays using statistical methods (mean + 0.5×stdDev)
+- **Behavior Recognition:** Uses Markov chains to model human-like action sequences
+- **Anomaly Detection:** Ensemble methods (z-score, IQR, MAD) to detect unusual responses
+- **Training Data:** Persists learning data to disk for continuous improvement across sessions
+- **Zero ML Dependencies:** Pure TypeScript statistical algorithms (no TensorFlow/PyTorch)
+
+**Performance:**
+- Prediction latency: <1ms
+- Memory: ~50-100 MB for ML data
+- Training data: Auto-saves every 10 minutes to `./data/training/`
+
+**Configuration:**
+- Default "balanced" mode enables all features
+- Configurable via environment variables
+- Optional async initialization for ML components
+
+See `CLAUDE.md` for complete technical documentation.
+
 ## Common Issues
 
 ### LinkedIn Scraper
@@ -273,9 +326,10 @@ Both applications use the same SQLite database located at `linkedin-scraper/data
 **LinkedIn Scraper:**
 - Email notifications for new jobs
 - Scheduled scraping with cron
-- ML-based job matching
+- ML-based job matching and recommendations
 - Multi-platform support (Indeed, Glassdoor)
 - Cloud deployment
+- Enhanced ML patterns (neural networks for deeper pattern recognition)
 
 **Job Browser:**
 - Application tracking system
