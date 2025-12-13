@@ -20,6 +20,7 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.mcp.json
 
 # Database
 *.db
@@ -54,3 +55,6 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# MCP
+.serena/
