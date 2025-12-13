@@ -93,50 +93,145 @@ export class Parser {
 
   /**
    * Strategy 2: Extract job data from HTML elements
+   * Tries multiple selector patterns to handle different LinkedIn page structures
    */
   async tryHtmlExtraction(): Promise<JobData | null> {
     try {
-      await this.page.waitForSelector('.jobs-unified-top-card', { timeout: 5000 });
+      // Try to wait for either structure (unified or layout)
+      try {
+        await Promise.race([
+          this.page.waitForSelector('.jobs-unified-top-card', { timeout: 3000 }),
+          this.page.waitForSelector('.top-card-layout', { timeout: 3000 }),
+          this.page.waitForSelector('.decorated-job-posting__details', { timeout: 3000 })
+        ]);
+      } catch (waitError) {
+        logger.warn('No job detail container found, attempting extraction anyway');
+      }
 
       const data = await this.page.evaluate(() => {
-        const getTextContent = (selector: string): string => {
-          const element = document.querySelector(selector);
-          return element?.textContent?.trim() || '';
+        // Helper to try multiple selectors
+        const getTextContent = (...selectors: string[]): string => {
+          for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element?.textContent?.trim()) {
+              return element.textContent.trim();
+            }
+          }
+          return '';
         };
 
-        const getHtmlContent = (selector: string): string => {
-          const element = document.querySelector(selector);
-          return element?.innerHTML?.trim() || '';
+        const getHtmlContent = (...selectors: string[]): string => {
+          for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element?.innerHTML?.trim()) {
+              return element.innerHTML.trim();
+            }
+          }
+          return '';
         };
 
-        const getAttribute = (selector: string, attr: string): string => {
-          const element = document.querySelector(selector);
-          return element?.getAttribute(attr) || '';
+        const getAttribute = (attr: string, ...selectors: string[]): string => {
+          for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            const value = element?.getAttribute(attr);
+            if (value) return value;
+          }
+          return '';
         };
 
         // Extract job ID from URL or data attribute
-        const jobId = window.location.pathname.match(/\/view\/(\d+)/)?.[1] || '';
+        const jobId = window.location.pathname.match(/\/view\/(\d+)/)?.[1] ||
+                      window.location.pathname.match(/\/jobs\/view\/(\d+)/)?.[1] || '';
+
+        // Try both unified and layout structures
+        const title = getTextContent(
+          '.jobs-unified-top-card__job-title',
+          '.top-card-layout__title',
+          '.topcard__title',
+          'h1.job-title',
+          'h2.top-card-layout__title'
+        );
+
+        const company = getTextContent(
+          '.jobs-unified-top-card__company-name',
+          '.top-card-layout__entity-info a',
+          '.topcard__org-name-link',
+          '.job-details-jobs-unified-top-card__company-name a',
+          'a.topcard__org-name-link'
+        );
+
+        const companyId = getAttribute('href',
+          '.jobs-unified-top-card__company-name a',
+          '.top-card-layout__entity-info a',
+          '.topcard__org-name-link'
+        )?.match(/\/company\/([^/?]+)/)?.[1] || '';
+
+        const location = getTextContent(
+          '.jobs-unified-top-card__bullet',
+          '.top-card-layout__second-subline',
+          '.topcard__flavor--bullet',
+          '.job-details-jobs-unified-top-card__bullet'
+        );
+
+        const description = getHtmlContent(
+          '.jobs-description__content',
+          '.description__text',
+          '.description__text--rich',
+          '.show-more-less-html__markup',
+          '.jobs-box__html-content'
+        );
+
+        const employmentType = getTextContent(
+          '.jobs-unified-top-card__job-insight--EMPLOYMENT_TYPE',
+          '.description__job-criteria-text--criteria'
+        );
+
+        const seniorityLevel = getTextContent(
+          '.jobs-unified-top-card__job-insight--SENIORITY_LEVEL',
+          '.description__job-criteria-text'
+        );
+
+        const postedDate = getTextContent(
+          '.jobs-unified-top-card__posted-date',
+          '.topcard__flavor--metadata',
+          '.job-details-jobs-unified-top-card__posted-date'
+        );
+
+        const applyUrl = getAttribute('href',
+          '.jobs-apply-button',
+          '.jobs-apply-button--top-card',
+          'a[data-tracking-control-name*="apply"]'
+        );
 
         return {
           id: jobId,
-          title: getTextContent('.jobs-unified-top-card__job-title'),
-          company: getTextContent('.jobs-unified-top-card__company-name'),
-          companyId: getAttribute('.jobs-unified-top-card__company-name a', 'href')?.match(/\/company\/([^/]+)/)?.[1],
-          location: getTextContent('.jobs-unified-top-card__bullet'),
-          description: getHtmlContent('.jobs-description__content'),
-          employmentType: getTextContent('.jobs-unified-top-card__job-insight--EMPLOYMENT_TYPE'),
-          seniorityLevel: getTextContent('.jobs-unified-top-card__job-insight--SENIORITY_LEVEL'),
-          postedDate: getTextContent('.jobs-unified-top-card__posted-date'),
+          title,
+          company,
+          companyId,
+          location,
+          description,
+          employmentType,
+          seniorityLevel,
+          postedDate,
           url: window.location.href,
-          applyUrl: getAttribute('.jobs-apply-button', 'href')
+          applyUrl
         };
       });
 
       if (!data.id || !data.title) {
+        logger.warn('HTML extraction incomplete - missing required fields', {
+          hasId: !!data.id,
+          hasTitle: !!data.title
+        });
         return null;
       }
 
-      logger.info('Extracted data using HTML strategy');
+      logger.info('Extracted data using HTML strategy', {
+        id: data.id,
+        title: data.title.substring(0, 50),
+        company: data.company,
+        hasDescription: !!data.description
+      });
 
       return {
         id: data.id,

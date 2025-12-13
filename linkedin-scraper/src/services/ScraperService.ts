@@ -9,9 +9,12 @@ import { ProgressUI } from '../cli/ui/ProgressUI.js';
 import { parsePostedDate } from '../utils/dateHelpers.js';
 import { logger } from '../utils/logger.js';
 import type { ScrapeOptions, ScrapeResult, JobCard, JobData } from '../types/index.js';
+import type { AntiDetectionConfig } from '../scraper/anti-detection/index.js';
 
 export interface ScraperServiceOptions {
   logBrowserErrors?: boolean;
+  headless?: boolean;
+  antiDetectionConfig?: Partial<AntiDetectionConfig>;
 }
 
 export class ScraperService {
@@ -24,9 +27,10 @@ export class ScraperService {
 
   constructor(options: ScraperServiceOptions = {}) {
     this.browser = new Browser({
-      headless: process.env.HEADLESS !== 'false',
+      headless: options.headless !== undefined ? options.headless : (process.env.HEADLESS !== 'false'),
       type: (process.env.BROWSER_TYPE as any) || 'chromium',
-      logBrowserErrors: options.logBrowserErrors || false
+      logBrowserErrors: options.logBrowserErrors || false,
+      antiDetectionConfig: options.antiDetectionConfig
     });
 
     this.jobRepo = new JobRepository();
@@ -251,7 +255,9 @@ export class ScraperService {
 
           // Click job card to load details
           await this.browser.click(card.selector);
-          await this.randomDelay(1500, 3000); // Reduced from 2000-4000
+
+          // Wait for page to stabilize after click
+          await this.waitForPageStability();
 
           // Remove modal overlay if present after clicking job card
           await this.browser.removeModalOverlay();
@@ -433,6 +439,157 @@ export class ScraperService {
       });
     } catch (htmlError) {
       logger.debug('Could not save HTML', { error: htmlError });
+    }
+  }
+
+  /**
+   * Wait for page to stabilize after interaction
+   * Uses multiple strategies to ensure content is loaded
+   */
+  private async waitForPageStability(): Promise<void> {
+    const page = this.browser.getPage();
+
+    try {
+      // Strategy 1: Wait for network to be mostly idle
+      await Promise.race([
+        page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
+          logger.debug('Network idle timeout, continuing anyway');
+        }),
+        page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {
+          logger.debug('DOM content loaded timeout, continuing anyway');
+        })
+      ]);
+
+      // Strategy 2: Additional delay for dynamic content
+      await this.randomDelay(1500, 2500);
+
+      // Strategy 3: Check if job detail container exists
+      const hasJobDetails = await page.evaluate(() => {
+        return !!(
+          document.querySelector('.jobs-unified-top-card') ||
+          document.querySelector('.top-card-layout') ||
+          document.querySelector('.decorated-job-posting__details')
+        );
+      });
+
+      if (!hasJobDetails) {
+        logger.debug('Job detail container not found, waiting additional time');
+        await this.randomDelay(1000, 2000);
+      }
+
+      logger.debug('Page stabilization complete');
+    } catch (error) {
+      logger.warn('Page stability check encountered error, continuing', { error });
+      // Continue anyway with a fallback delay
+      await this.randomDelay(2000, 3000);
+    }
+  }
+
+  /**
+   * Validate stealth implementation
+   * Launches browser, navigates to a test page, and validates anti-detection measures
+   */
+  async validateStealth(): Promise<void> {
+    try {
+      logger.info('Starting stealth validation');
+
+      await this.browser.launch();
+      const page = this.browser.getPage();
+
+      // Navigate to a simple test page
+      await this.browser.navigate('https://www.linkedin.com');
+
+      // Get the anti-detection manager from browser (we need to expose this)
+      // For now, we'll run validation in the page context
+      const validationResult = await page.evaluate(() => {
+        const report = {
+          tests: {} as Record<string, boolean>,
+          webdriverDetected: false,
+          automationDetected: false
+        };
+
+        // Test 1: navigator.webdriver
+        try {
+          report.tests['navigator.webdriver'] = navigator.webdriver === false;
+          if (navigator.webdriver === true) {
+            report.webdriverDetected = true;
+          }
+        } catch (e) {
+          report.tests['navigator.webdriver'] = false;
+        }
+
+        // Test 2: window.chrome
+        try {
+          report.tests['window.chrome'] = typeof (window as any).chrome === 'object';
+        } catch (e) {
+          report.tests['window.chrome'] = false;
+        }
+
+        // Test 3: navigator.plugins
+        try {
+          report.tests['navigator.plugins'] = navigator.plugins.length > 0;
+        } catch (e) {
+          report.tests['navigator.plugins'] = false;
+        }
+
+        // Test 4: navigator.languages
+        try {
+          report.tests['navigator.languages'] = Array.isArray(navigator.languages) && navigator.languages.length > 0;
+        } catch (e) {
+          report.tests['navigator.languages'] = false;
+        }
+
+        // Test 5: permissions API
+        try {
+          report.tests['permissions.query'] = typeof navigator.permissions?.query === 'function';
+        } catch (e) {
+          report.tests['permissions.query'] = false;
+        }
+
+        // Test 6: automation markers
+        try {
+          const hasAutomationMarkers =
+            (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Array ||
+            (window as any).cdc_adoQpoasnfa76pfcZLmcfl_Promise ||
+            (window as any).__webdriver_script_fn;
+
+          report.tests['automation_markers'] = !hasAutomationMarkers;
+          if (hasAutomationMarkers) {
+            report.automationDetected = true;
+          }
+        } catch (e) {
+          report.tests['automation_markers'] = true;
+        }
+
+        return report;
+      });
+
+      // Calculate results
+      const totalTests = Object.keys(validationResult.tests).length;
+      const passedTests = Object.values(validationResult.tests).filter(v => v === true).length;
+      const passPercentage = (passedTests / totalTests) * 100;
+
+      logger.info('Stealth validation completed', {
+        passed: passedTests,
+        total: totalTests,
+        percentage: passPercentage.toFixed(1) + '%',
+        webdriverDetected: validationResult.webdriverDetected,
+        automationDetected: validationResult.automationDetected,
+        tests: validationResult.tests
+      });
+
+      if (validationResult.webdriverDetected || validationResult.automationDetected) {
+        throw new Error('Stealth validation failed: automation markers detected');
+      }
+
+      if (passPercentage < 75) {
+        throw new Error(`Stealth validation failed: only ${passPercentage.toFixed(1)}% of tests passed`);
+      }
+    } catch (error) {
+      logger.error('Stealth validation error', { error });
+      throw error;
+    } finally {
+      await this.browser.close();
     }
   }
 }

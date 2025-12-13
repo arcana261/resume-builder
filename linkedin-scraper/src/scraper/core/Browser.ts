@@ -1,5 +1,6 @@
 import { chromium, firefox, webkit, Browser as PlaywrightBrowser, Page, BrowserContext } from 'playwright';
 import { logger } from '../../utils/logger.js';
+import { AntiDetectionManager, type AntiDetectionConfig } from '../anti-detection/index.js';
 
 export interface BrowserOptions {
   headless?: boolean;
@@ -11,6 +12,7 @@ export interface BrowserOptions {
   };
   stealth?: boolean;
   logBrowserErrors?: boolean;
+  antiDetectionConfig?: Partial<AntiDetectionConfig>;
 }
 
 export class Browser {
@@ -18,6 +20,7 @@ export class Browser {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private options: BrowserOptions;
+  private antiDetection: AntiDetectionManager;
 
   constructor(options: BrowserOptions = {}) {
     this.options = {
@@ -26,6 +29,11 @@ export class Browser {
       stealth: options.stealth !== false,
       ...options
     };
+
+    // Initialize anti-detection manager
+    this.antiDetection = new AntiDetectionManager(options.antiDetectionConfig);
+
+    logger.debug('Browser instance created with anti-detection enabled');
   }
 
   async launch(): Promise<void> {
@@ -34,15 +42,16 @@ export class Browser {
 
       const browserType = this.getBrowserType();
 
+      // Generate fingerprint from anti-detection manager
+      const fingerprint = this.antiDetection.generateFingerprint();
+
+      // Use fingerprint launch options and add headless from options
       const launchOptions: any = {
-        headless: this.options.headless,
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-web-security',
-        ]
+        ...fingerprint.launchOptions,
+        headless: this.options.headless
       };
 
+      // Add proxy if configured
       if (this.options.proxy) {
         launchOptions.proxy = {
           server: this.options.proxy.server,
@@ -53,18 +62,12 @@ export class Browser {
 
       this.browser = await browserType.launch(launchOptions);
 
-      // Create context with realistic viewport and user agent
-      this.context = await this.browser.newContext({
-        viewport: { width: 1920, height: 1080 },
-        userAgent: this.getRandomUserAgent(),
-        locale: 'en-US',
-        timezoneId: 'America/New_York',
-        permissions: []
-      });
+      // Create context with fingerprint options
+      this.context = await this.browser.newContext(fingerprint.contextOptions);
 
-      // Add stealth modifications
+      // Apply stealth patches via anti-detection manager
       if (this.options.stealth) {
-        await this.applyStealth(this.context);
+        await this.antiDetection.applyStealth(this.context);
       }
 
       this.page = await this.context.newPage();
@@ -112,6 +115,10 @@ export class Browser {
 
     try {
       logger.info('Navigating to URL', { url });
+
+      // Anti-detection: before navigate hook
+      await this.antiDetection.beforeNavigate(this.page, url);
+
       await this.page.goto(url, {
         waitUntil: 'domcontentloaded',
         timeout: 30000
@@ -120,6 +127,9 @@ export class Browser {
 
       // Remove modal overlay if present
       await this.removeModalOverlay();
+
+      // Anti-detection: after navigate hook
+      await this.antiDetection.afterNavigate(this.page, url);
     } catch (error) {
       logger.error('Navigation failed', { url, error });
       throw error;
@@ -139,8 +149,14 @@ export class Browser {
       throw new Error('Browser not initialized');
     }
 
+    // Anti-detection: before click hook
+    await this.antiDetection.beforeClick(this.page, selector);
+
     await this.page.click(selector);
     await this.randomDelay(500, 1500);
+
+    // Anti-detection: after click hook
+    await this.antiDetection.afterClick(this.page);
   }
 
   async goBack(): Promise<void> {
@@ -332,39 +348,6 @@ export class Browser {
       default:
         return chromium;
     }
-  }
-
-  private getRandomUserAgent(): string {
-    const userAgents = [
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    ];
-
-    return userAgents[Math.floor(Math.random() * userAgents.length)];
-  }
-
-  private async applyStealth(context: BrowserContext): Promise<void> {
-    // Override navigator.webdriver
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false
-      });
-
-      // Override Chrome detection
-      (window as any).chrome = {
-        runtime: {}
-      };
-
-      // Override permissions
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters: any) =>
-        parameters.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-          : originalQuery(parameters);
-    });
   }
 
   private async randomDelay(min: number, max: number): Promise<void> {
