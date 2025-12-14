@@ -35,6 +35,7 @@ export function createTestDatabase(): BetterSQLite3Database<typeof schema> {
       scraped_at INTEGER NOT NULL,
       search_id INTEGER,
       raw_data TEXT,
+      page_html TEXT,
       created_at INTEGER DEFAULT (unixepoch()) NOT NULL,
       updated_at INTEGER DEFAULT (unixepoch()) NOT NULL
     );
