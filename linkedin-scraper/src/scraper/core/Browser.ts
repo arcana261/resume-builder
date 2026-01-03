@@ -73,19 +73,9 @@ export class Browser {
       this.page = await this.context.newPage();
 
       // Aggressively disable Chrome translation
+      // Note: navigator.languages is already set by FingerprintManager with en-US locale
       try {
         await this.page.addInitScript(() => {
-          // Block translation at the deepest level
-          Object.defineProperty(navigator, 'languages', {
-            get: () => ['en-US', 'en'],
-            configurable: false
-          });
-
-          Object.defineProperty(navigator, 'language', {
-            get: () => 'en-US',
-            configurable: false
-          });
-
           // Block Chrome's internal translate namespace
           (window as any).cr = (window as any).cr || {};
           (window as any).cr.googleTranslate = {
