@@ -72,6 +72,72 @@ export class Browser {
 
       this.page = await this.context.newPage();
 
+      // Aggressively disable Chrome translation
+      try {
+        await this.page.addInitScript(() => {
+          // Block translation at the deepest level
+          Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en'],
+            configurable: false
+          });
+
+          Object.defineProperty(navigator, 'language', {
+            get: () => 'en-US',
+            configurable: false
+          });
+
+          // Block Chrome's internal translate namespace
+          (window as any).cr = (window as any).cr || {};
+          (window as any).cr.googleTranslate = {
+            get isAvailable() { return false; },
+            get isActive() { return false; }
+          };
+
+          // Override any translate-related functions
+          if ((window as any).google && (window as any).google.translate) {
+            (window as any).google.translate.TranslateElement = function() {};
+          }
+
+          // Inject CSS to hide all translate UI elements
+          const style = document.createElement('style');
+          style.id = 'disable-translate-style';
+          style.textContent = `
+            body > .goog-te-banner-frame,
+            body > .goog-te-menu-frame,
+            body > .goog-te-menu-value,
+            body > .goog-te-gadget,
+            body > .goog-te-spinner-pos,
+            .goog-te-balloon-frame,
+            .translate-tooltip-matte,
+            #google_translate_element,
+            #goog-gt-tt,
+            [class*="goog-te"],
+            [id*="google_translate"] {
+              display: none !important;
+              visibility: hidden !important;
+              opacity: 0 !important;
+              pointer-events: none !important;
+            }
+          `;
+
+          // Inject immediately if head exists, otherwise wait for it
+          if (document.head) {
+            document.head.appendChild(style);
+          } else {
+            const observer = new MutationObserver(() => {
+              if (document.head) {
+                document.head.appendChild(style);
+                observer.disconnect();
+              }
+            });
+            observer.observe(document.documentElement, { childList: true });
+          }
+        });
+        logger.debug('[Browser] Translation aggressively disabled');
+      } catch (error) {
+        logger.warn('[Browser] Failed to disable translation:', error);
+      }
+
       // Listen to browser console messages and forward to Node.js logger
       /**
       this.page.on('console', (msg) => {

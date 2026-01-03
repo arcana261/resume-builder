@@ -8,6 +8,9 @@ export class JobFilter {
     const baseUrl = 'https://www.linkedin.com/jobs/search';
     const params = new URLSearchParams();
 
+    // Force English language interface (prevents translation prompts)
+    params.append('trk', 'public_jobs_jobs-search-bar_search-submit');
+
     // Position keywords
     if (filters.position) {
       params.append('keywords', filters.position);

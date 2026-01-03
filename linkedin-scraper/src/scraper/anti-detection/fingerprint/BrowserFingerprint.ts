@@ -108,34 +108,36 @@ const PLATFORMS = {
 
 // ============================================================================
 // Locales (Common Real-World Locales)
+// NOTE: Disabled to prevent translation triggers - always using en-US
 // ============================================================================
 
-const LOCALES = [
-  'en-US',    // United States - Most common
-  'en-GB',    // United Kingdom
-  'en-CA',    // Canada
-  'en-AU',    // Australia
-  'de-DE',    // Germany
-  'fr-FR',    // France
-  'es-ES',    // Spain
-  'it-IT',    // Italy
-  'ja-JP',    // Japan
-  'ko-KR',    // Korea
-];
+// const LOCALES = [
+//   'en-US',    // United States - Most common
+//   'en-GB',    // United Kingdom
+//   'en-CA',    // Canada
+//   'en-AU',    // Australia
+//   'de-DE',    // Germany
+//   'fr-FR',    // France
+//   'es-ES',    // Spain
+//   'it-IT',    // Italy
+//   'ja-JP',    // Japan
+//   'ko-KR',    // Korea
+// ];
 
 // ============================================================================
 // Languages (Browser Language Preferences)
+// NOTE: Disabled to prevent translation triggers - always using ['en-US', 'en']
 // ============================================================================
 
-const LANGUAGE_SETS: Record<string, string[]> = {
-  'en-US': ['en-US', 'en'],
-  'en-GB': ['en-GB', 'en'],
-  'en-CA': ['en-CA', 'en', 'fr-CA'],
-  'de-DE': ['de-DE', 'de', 'en'],
-  'fr-FR': ['fr-FR', 'fr', 'en'],
-  'es-ES': ['es-ES', 'es', 'en'],
-  'ja-JP': ['ja-JP', 'ja', 'en'],
-};
+// const LANGUAGE_SETS: Record<string, string[]> = {
+//   'en-US': ['en-US', 'en'],
+//   'en-GB': ['en-GB', 'en'],
+//   'en-CA': ['en-CA', 'en', 'fr-CA'],
+//   'de-DE': ['de-DE', 'de', 'en'],
+//   'fr-FR': ['fr-FR', 'fr', 'en'],
+//   'es-ES': ['es-ES', 'es', 'en'],
+//   'ja-JP': ['ja-JP', 'ja', 'en'],
+// };
 
 // ============================================================================
 // BrowserFingerprint Generator
@@ -161,22 +163,30 @@ export class BrowserFingerprintGenerator {
     // Select matching screen resolution
     const screenResolution = this.selectMatchingScreenResolution(viewport);
 
-    // Select locale and timezone
-    const locale = this.selectRandom(LOCALES);
+    // Force English locale to prevent translation triggers
+    // (Random locales cause Chrome to detect foreign language and trigger translation)
+    const locale = 'en-US';
     const timezone = this.selectMatchingTimezone(locale);
 
-    // Get language preferences
-    const languages = LANGUAGE_SETS[locale] || ['en-US', 'en'];
+    // Always use English language preferences
+    const languages = ['en-US', 'en'];
 
     // Build launch options
     const launchOptions = {
       args: [
         '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-features=IsolateOrigins,site-per-process,Translate,TranslateUI',  // Disable translation features
         '--disable-web-security',
         '--disable-dev-shm-usage',
         '--no-sandbox',
-      ]
+        '--disable-translate',  // Disable Chrome translation feature
+        '--lang=en-US',  // Force English language
+        '--disable-extensions',  // Disable extensions that might enable translate
+        '--disable-component-extensions-with-background-pages',
+      ],
+      // Chromium-specific preferences to disable translation
+      chromiumSandbox: false,
+      ignoreDefaultArgs: ['--enable-automation']
     };
 
     // Build context options
