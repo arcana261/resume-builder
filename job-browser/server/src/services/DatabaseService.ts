@@ -99,4 +99,58 @@ export class DatabaseService {
   public close() {
     this.db.close();
   }
+
+  /**
+   * Delete a single job by job_id
+   * @param jobId - The job_id to delete
+   * @returns true if deleted, false if not found
+   */
+  public deleteJob(jobId: string): boolean {
+    try {
+      const stmt = this.db.prepare('DELETE FROM jobs WHERE job_id = ?');
+      const result = stmt.run(jobId);
+      return result.changes > 0;
+    } catch (error) {
+      console.error(`[DatabaseService] Error deleting job ${jobId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete multiple jobs by job_ids in a transaction
+   * @param jobIds - Array of job_ids to delete
+   * @returns Object with count of deleted jobs and array of failed job_ids
+   */
+  public deleteBulk(jobIds: string[]): { deleted: number; failed: string[] } {
+    const failed: string[] = [];
+    let deleted = 0;
+
+    try {
+      // Use transaction for atomicity
+      const deleteMany = this.db.transaction((ids: string[]) => {
+        const stmt = this.db.prepare('DELETE FROM jobs WHERE job_id = ?');
+
+        for (const jobId of ids) {
+          try {
+            const result = stmt.run(jobId);
+            if (result.changes > 0) {
+              deleted++;
+            } else {
+              failed.push(jobId);
+            }
+          } catch (error) {
+            console.error(`[DatabaseService] Error deleting job ${jobId}:`, error);
+            failed.push(jobId);
+          }
+        }
+      });
+
+      deleteMany(jobIds);
+
+      return { deleted, failed };
+    } catch (error) {
+      console.error('[DatabaseService] Error in bulk delete transaction:', error);
+      throw error;
+    }
+  }
 }

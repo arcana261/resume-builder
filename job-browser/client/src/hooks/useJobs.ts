@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchJobs, fetchJob, fetchJobHTML } from '../lib/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchJobs, fetchJob, fetchJobHTML, deleteJob, deleteBulkJobs } from '../lib/api';
 import type { JobsQueryParams } from '@shared/types';
 
 export function useJobs(params: JobsQueryParams) {
@@ -7,7 +7,7 @@ export function useJobs(params: JobsQueryParams) {
     queryKey: ['jobs', params],
     queryFn: () => fetchJobs(params),
     staleTime: 5 * 60 * 1000, // 5 minutes
-    keepPreviousData: true
+    placeholderData: (previousData) => previousData
   });
 }
 
@@ -26,5 +26,27 @@ export function useJobHTML(id: number) {
     queryFn: () => fetchJobHTML(id),
     staleTime: Infinity,
     enabled: !!id
+  });
+}
+
+export function useDeleteJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteJob,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    }
+  });
+}
+
+export function useDeleteBulkJobs() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteBulkJobs,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    }
   });
 }

@@ -306,4 +306,42 @@ export class JobService {
       }
     };
   }
+
+  /**
+   * Delete a single job by job_id
+   * @param jobId - The job_id to delete
+   * @throws Error if job not found or delete fails
+   */
+  public async deleteJob(jobId: string): Promise<void> {
+    console.log(`[JobService] Deleting job: ${jobId}`);
+
+    const dbService = DatabaseService.getInstance();
+    const deleted = dbService.deleteJob(jobId);
+
+    if (!deleted) {
+      throw new Error(`Job not found: ${jobId}`);
+    }
+
+    console.log(`[JobService] Successfully deleted job: ${jobId}`);
+  }
+
+  /**
+   * Delete multiple jobs by job_ids
+   * @param jobIds - Array of job_ids to delete
+   * @returns Object with count of deleted jobs and array of failed job_ids
+   */
+  public async deleteBulk(jobIds: string[]): Promise<{ deleted: number; failed: string[] }> {
+    console.log(`[JobService] Bulk deleting ${jobIds.length} jobs`);
+
+    if (jobIds.length === 0) {
+      return { deleted: 0, failed: [] };
+    }
+
+    const dbService = DatabaseService.getInstance();
+    const result = dbService.deleteBulk(jobIds);
+
+    console.log(`[JobService] Bulk delete complete: ${result.deleted} deleted, ${result.failed.length} failed`);
+
+    return result;
+  }
 }

@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink, MapPin, Calendar, DollarSign, Download } from 
 import { useJob, useJobHTML } from '../hooks/useJobs';
 import { formatSalary } from '../lib/utils';
 import { SafeHTML } from '../components/SafeHTML';
+import { DeleteButton } from '../components/DeleteButton';
 
 export function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -131,6 +132,14 @@ export function JobDetailPage() {
                 Apply on LinkedIn
                 <ExternalLink className="w-4 h-4" />
               </a>
+              <DeleteButton
+                jobId={job.job_id}
+                jobTitles={[job.title]}
+                onSuccess={() => navigate('/')}
+                variant="icon-text"
+                size="md"
+                className="w-full justify-center"
+              />
             </div>
           </div>
         </div>

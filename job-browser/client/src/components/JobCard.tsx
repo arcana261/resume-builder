@@ -3,6 +3,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { MapPin, Calendar, DollarSign, ExternalLink } from 'lucide-react';
 import { formatSalary } from '../lib/utils';
 import { SafeHTML } from './SafeHTML';
+import { DeleteButton } from './DeleteButton';
+import { useSelectionStore } from '../store/selectionStore';
 import type { Job } from '@shared/types';
 
 interface JobCardProps {
@@ -11,6 +13,9 @@ interface JobCardProps {
 
 export function JobCard({ job }: JobCardProps) {
   const navigate = useNavigate();
+  const { isSelected, toggleSelection } = useSelectionStore();
+
+  const selected = isSelected(job.job_id);
 
   const handleCardClick = () => {
     navigate(`/jobs/${job.id}`);
@@ -20,13 +25,44 @@ export function JobCard({ job }: JobCardProps) {
     e.stopPropagation();
   };
 
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    toggleSelection(job.job_id);
+  };
+
   return (
     <div
       onClick={handleCardClick}
-      className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+      className={`relative bg-white dark:bg-gray-800 rounded-lg border ${
+        selected
+          ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
+          : 'border-gray-200 dark:border-gray-700'
+      } p-6 hover:shadow-lg transition-all cursor-pointer group`}
     >
+      {/* Checkbox */}
+      <div className="absolute top-2 left-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={handleCheckboxChange}
+          onClick={(e) => e.stopPropagation()}
+          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          aria-label={`Select ${job.title}`}
+        />
+      </div>
+
+      {/* Delete Button */}
+      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <DeleteButton
+          jobId={job.job_id}
+          jobTitles={[job.title]}
+          variant="icon"
+          size="sm"
+        />
+      </div>
+
       {/* Header */}
-      <div className="mb-4">
+      <div className="mb-4 ml-7">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1">
           {job.title}
         </h3>

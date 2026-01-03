@@ -1,8 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useJobs } from '../hooks/useJobs';
 import { useFilterStore } from '../store/filterStore';
+import { useSelectionStore } from '../store/selectionStore';
 import { FilterPanel } from '../components/FilterPanel';
 import { JobList } from '../components/JobList';
+import { BulkActions } from '../components/BulkActions';
+import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
+import { useDeleteBulkJobs } from '../hooks/useJobs';
 
 export function JobBrowser() {
   const {
@@ -39,10 +43,53 @@ export function JobBrowser() {
     sortOrder
   });
 
+  const { getSelectedCount, getSelectedIds, clearSelection } = useSelectionStore();
+  const selectedCount = getSelectedCount();
+  const selectedIds = getSelectedIds();
+  const selectedTitles = (data?.data || [])
+    .filter((job) => selectedIds.includes(job.job_id))
+    .map((job) => job.title);
+
+  const [showKeyboardDeleteDialog, setShowKeyboardDeleteDialog] = useState(false);
+  const deleteBulkJobsMutation = useDeleteBulkJobs();
+
   // Scroll to top on page change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [page]);
+
+  // Keyboard shortcut: Delete key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // Delete or Backspace key
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedCount > 0) {
+        e.preventDefault();
+        setShowKeyboardDeleteDialog(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCount]);
+
+  const handleKeyboardDelete = async () => {
+    try {
+      const result = await deleteBulkJobsMutation.mutateAsync(selectedIds);
+      if (result.deleted > 0) {
+        alert(`Successfully deleted ${result.deleted} job(s)${result.failed.length > 0 ? `. ${result.failed.length} failed.` : ''}`);
+      }
+      setShowKeyboardDeleteDialog(false);
+      clearSelection();
+    } catch (error: any) {
+      alert(`Failed to delete: ${error.response?.data?.error || error.message}`);
+    }
+  };
 
   if (error) {
     return (
@@ -115,6 +162,24 @@ export function JobBrowser() {
           </main>
         </div>
       </div>
+
+      {/* Bulk Actions Toolbar */}
+      <BulkActions
+        selectedCount={selectedCount}
+        selectedIds={selectedIds}
+        selectedTitles={selectedTitles}
+        onClearSelection={clearSelection}
+      />
+
+      {/* Keyboard Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        isOpen={showKeyboardDeleteDialog}
+        onClose={() => setShowKeyboardDeleteDialog(false)}
+        onConfirm={handleKeyboardDelete}
+        jobCount={selectedCount}
+        jobTitles={selectedTitles}
+        isDeleting={deleteBulkJobsMutation.isPending}
+      />
     </div>
   );
 }

@@ -4,7 +4,9 @@ import type {
   JobsResponse,
   JobDetailResponse,
   JobHTMLResponse,
-  SearchesResponse
+  SearchesResponse,
+  DeleteJobResponse,
+  BulkDeleteResult
 } from '@shared/types';
 
 const api = axios.create({
@@ -29,5 +31,15 @@ export async function fetchJobHTML(id: number): Promise<JobHTMLResponse> {
 
 export async function fetchSearches(): Promise<SearchesResponse> {
   const { data } = await api.get('/searches');
+  return data;
+}
+
+export async function deleteJob(jobId: string): Promise<DeleteJobResponse> {
+  const { data } = await api.delete(`/jobs/${jobId}`);
+  return data;
+}
+
+export async function deleteBulkJobs(jobIds: string[]): Promise<BulkDeleteResult> {
+  const { data } = await api.delete('/jobs', { data: { jobIds } });
   return data;
 }

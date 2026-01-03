@@ -105,3 +105,15 @@ export interface StatsResponse {
   averageSalary: number;
   recentlyAdded: number;
 }
+
+export interface DeleteJobResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface BulkDeleteResult {
+  success: boolean;
+  deleted: number;
+  failed: string[];
+  message: string;
+}
