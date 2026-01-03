@@ -87,41 +87,6 @@ export class Browser {
           if ((window as any).google && (window as any).google.translate) {
             (window as any).google.translate.TranslateElement = function() {};
           }
-
-          // Inject CSS to hide all translate UI elements
-          const style = document.createElement('style');
-          style.id = 'disable-translate-style';
-          style.textContent = `
-            body > .goog-te-banner-frame,
-            body > .goog-te-menu-frame,
-            body > .goog-te-menu-value,
-            body > .goog-te-gadget,
-            body > .goog-te-spinner-pos,
-            .goog-te-balloon-frame,
-            .translate-tooltip-matte,
-            #google_translate_element,
-            #goog-gt-tt,
-            [class*="goog-te"],
-            [id*="google_translate"] {
-              display: none !important;
-              visibility: hidden !important;
-              opacity: 0 !important;
-              pointer-events: none !important;
-            }
-          `;
-
-          // Inject immediately if head exists, otherwise wait for it
-          if (document.head) {
-            document.head.appendChild(style);
-          } else {
-            const observer = new MutationObserver(() => {
-              if (document.head) {
-                document.head.appendChild(style);
-                observer.disconnect();
-              }
-            });
-            observer.observe(document.documentElement, { childList: true });
-          }
         });
         logger.debug('[Browser] Translation aggressively disabled');
       } catch (error) {
