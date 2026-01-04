@@ -143,3 +143,28 @@ export interface Config {
     type: 'chromium' | 'firefox' | 'webkit';
   };
 }
+
+// Session Management Types
+export interface SessionData {
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    expires: number;
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: 'Strict' | 'Lax' | 'None';
+  }>;
+  localStorage: Record<string, string>;
+  sessionStorage: Record<string, string>;
+  timestamp: number;
+  userAgent: string;
+  viewport: { width: number; height: number };
+}
+
+export interface SessionConfig {
+  sessionPath: string;
+  sessionTimeout: number;
+  loginTimeout: number;
+}

@@ -114,6 +114,94 @@ npm run dev scrape \
   --limit 100
 ```
 
+## LinkedIn Login
+
+To scrape as an authenticated LinkedIn user, you can save your session and reuse it across scrapes.
+
+### Why Login?
+
+- Access more job listings
+- Bypass rate limits for anonymous users
+- See full job descriptions without interruption
+
+### ⚠️ Security Warning
+
+**Session data is stored in plain text** in `data/linkedin-session.json`. This file contains:
+- Authentication cookies
+- Browser localStorage/sessionStorage
+- User agent and viewport info
+
+**Recommendations:**
+- ✅ Use a separate LinkedIn account for scraping
+- ✅ Limit scraping volume (< 50 jobs/day)
+- ✅ Never commit session files to version control (.gitignore included)
+- ✅ Never share your session file
+- ⚠️ LinkedIn may ban accounts that scrape aggressively
+
+### First-Time Setup
+
+1. **Login to LinkedIn:**
+
+```bash
+npm run dev login
+```
+
+This command will:
+- Open a browser window to LinkedIn's login page
+- Wait for you to manually log in (handles 2FA and CAPTCHA)
+- Save your session to `data/linkedin-session.json`
+- Close the browser
+
+2. **Scrape jobs** (session will be automatically restored):
+
+```bash
+npm run dev scrape --position "Software Engineer" --location "NYC"
+```
+
+The scraper will automatically detect and use your saved session.
+
+### Session Management
+
+**Check session status:**
+```bash
+npm run dev session
+```
+
+Shows:
+- Session status (Active/Expired)
+- Session age (days, hours, minutes)
+- File location
+- Expiry warning (if > 24 hours old)
+
+**Logout (clear session):**
+```bash
+npm run dev logout
+```
+
+Deletes the session file from disk.
+
+**Re-login (if session expired):**
+```bash
+npm run dev login
+```
+
+### Session Behavior
+
+- **Auto-restore**: Session is automatically loaded when launching browser
+- **Expiry**: Sessions expire after 24 hours (configurable in `.env`)
+- **Validation**: Session validity is not checked during scraping (assumes LinkedIn's TTL)
+- **Storage**: Plain text JSON file in project directory
+
+### Configuration
+
+Edit `.env` to customize session settings:
+
+```bash
+SESSION_PATH=./data/linkedin-session.json  # Session file location
+SESSION_TIMEOUT=86400000                    # 24 hours in milliseconds
+LOGIN_TIMEOUT=300000                        # 5 minutes (time to complete login)
+```
+
 ## Commands
 
 ### `scrape` - Scrape LinkedIn Jobs
@@ -259,6 +347,61 @@ linkedin-scraper clear
 
 # Skip confirmation
 linkedin-scraper clear --yes
+```
+
+### `login` - Login to LinkedIn
+
+Open a browser window to login to LinkedIn and save your session for authenticated scraping.
+
+**Features:**
+- Always runs in headed mode
+- Handles 2FA and CAPTCHA
+- Saves cookies, localStorage, and sessionStorage
+- 5-minute timeout for login completion
+- Displays security warning before execution
+
+**Examples:**
+
+```bash
+# Login to LinkedIn
+npm run dev login
+
+# The command will:
+# 1. Show security warning (5 second delay)
+# 2. Open browser to LinkedIn login page
+# 3. Wait for you to manually log in
+# 4. Save session to data/linkedin-session.json
+# 5. Close browser automatically
+```
+
+### `logout` - Clear Session
+
+Delete the saved LinkedIn session from disk.
+
+**Examples:**
+
+```bash
+# Clear saved session
+npm run dev logout
+
+# This will delete data/linkedin-session.json
+```
+
+### `session` - View Session Status
+
+Display information about your current LinkedIn session.
+
+**Examples:**
+
+```bash
+# Check session status
+npm run dev session
+
+# Shows:
+# - Session status (Active/Expired)
+# - Session age (days, hours, minutes)
+# - File location
+# - Expiry warning if > 24 hours old
 ```
 
 ## Configuration

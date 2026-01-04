@@ -70,6 +70,28 @@ export class Browser {
         await this.antiDetection.applyStealth(this.context);
       }
 
+      // Auto-restore session if exists
+      const { SessionManager } = await import('../auth/SessionManager.js');
+      const sessionManager = new SessionManager();
+
+      if (sessionManager.sessionExists()) {
+        logger.info('Found saved session, attempting to restore...');
+
+        // Create temporary page for session restoration
+        const tempPage = await this.context.newPage();
+        const restored = await sessionManager.loadSession(this.context, tempPage);
+
+        if (restored) {
+          logger.info('Session restored successfully');
+          await tempPage.close();
+        } else {
+          logger.warn('Session restore failed or expired');
+          await tempPage.close();
+        }
+      } else {
+        logger.debug('No saved session found');
+      }
+
       this.page = await this.context.newPage();
 
       // Aggressively disable Chrome translation
@@ -357,6 +379,13 @@ export class Browser {
       throw new Error('Browser not initialized');
     }
     return this.page;
+  }
+
+  getContext(): BrowserContext {
+    if (!this.context) {
+      throw new Error('Browser not initialized');
+    }
+    return this.context;
   }
 
   private getBrowserType() {

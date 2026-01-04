@@ -13,10 +13,12 @@ dist/
 .env.local
 .mcp.json
 
-# Database
+# Database & Session
 data/
 *.db
 *.db-journal
+data/linkedin-session.json
+data/*.session.json
 
 # Logs
 logs/
